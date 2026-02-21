@@ -38,7 +38,15 @@ def build_user_router(
 
         profiles = await profile_repo.list_profiles(active_only=True)
         if not profiles:
-            await message.answer("فعلا مدلی برای فروش فعال نیست.")
+            if chat_id == admin_chat_id:
+                await message.answer(
+                    "فعلا مدلی برای فروش فعال نیست.\n"
+                    "شما ادمین هستی؛ با دستور `/admin` وارد پنل ادمین شو و:\n"
+                    "1) اول روی 3x-ui یک inbound بساز\n"
+                    "2) بعد در ربات `ساخت پروفایل` را انجام بده"
+                )
+            else:
+                await message.answer("فعلا مدلی برای فروش فعال نیست.")
             return
 
         menu = [(p.id, p.name) for p in profiles]

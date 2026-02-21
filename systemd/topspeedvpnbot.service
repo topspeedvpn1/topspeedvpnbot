@@ -1,0 +1,15 @@
+[Unit]
+Description=TopSpeedVPN Multi-Panel 3x-ui Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/topspeedvpnbot
+EnvironmentFile=/etc/topspeedvpnbot/.env
+ExecStart=/opt/topspeedvpnbot/.venv/bin/python -m src.main
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

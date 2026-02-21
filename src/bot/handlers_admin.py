@@ -1,0 +1,414 @@
+from __future__ import annotations
+
+from aiogram import F, Router
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.types import Message
+
+from src.bot.keyboards import (
+    ADMIN_BUTTON_ADD_PANEL,
+    ADMIN_BUTTON_ADD_USER,
+    ADMIN_BUTTON_CAPACITY,
+    ADMIN_BUTTON_CREATE_PROFILE,
+    ADMIN_BUTTON_LIST_PANELS,
+    ADMIN_BUTTON_LIST_PROFILES,
+    ADMIN_BUTTON_REMOVE_USER,
+    ADMIN_BUTTON_TEST_PANEL,
+    ADMIN_BUTTON_TOGGLE_PROFILE,
+    admin_menu_keyboard,
+)
+from src.bot.states import AdminStates
+from src.repositories.allowlist import AllowlistRepository
+from src.repositories.panels import PanelRepository
+from src.repositories.profiles import ProfileRepository
+from src.services.allocator import AllocationError, AllocatorService
+from src.services.crypto import CryptoService
+from src.services.xui_client import XUIClient, XUIError
+
+
+def build_admin_router(
+    *,
+    admin_chat_id: int,
+    allowlist_repo: AllowlistRepository,
+    panel_repo: PanelRepository,
+    profile_repo: ProfileRepository,
+    allocator: AllocatorService,
+    crypto: CryptoService,
+    xui_verify_tls: bool,
+    request_timeout: int,
+) -> Router:
+    router = Router(name="admin")
+
+    def is_admin(chat_id: int) -> bool:
+        return chat_id == admin_chat_id
+
+    async def guard_admin(message: Message) -> bool:
+        if not is_admin(message.from_user.id):
+            await message.answer("این بخش فقط برای ادمین است.")
+            return False
+        return True
+
+    @router.message(Command("admin"))
+    async def admin_menu(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.clear()
+        await message.answer(
+            "پنل ادمین باز شد. یکی از گزینه‌ها را انتخاب کن.",
+            reply_markup=admin_menu_keyboard(),
+        )
+
+    @router.message(Command("cancel"))
+    async def cancel_any(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.clear()
+        await message.answer("عملیات لغو شد.", reply_markup=admin_menu_keyboard())
+
+    @router.message(F.text == ADMIN_BUTTON_ADD_USER)
+    async def ask_add_user(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.add_user)
+        await message.answer("فرمت: `chat_id [note]`\nمثال: `123456789 vip`")
+
+    @router.message(AdminStates.add_user)
+    async def add_user(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        parts = (message.text or "").strip().split(maxsplit=1)
+        if not parts:
+            await message.answer("فرمت اشتباه است.")
+            return
+        try:
+            chat_id = int(parts[0])
+        except ValueError:
+            await message.answer("chat_id باید عدد باشد.")
+            return
+        note = parts[1] if len(parts) > 1 else ""
+        await allowlist_repo.add(chat_id, note)
+        await state.clear()
+        await message.answer(f"کاربر {chat_id} اضافه شد.", reply_markup=admin_menu_keyboard())
+
+    @router.message(F.text == ADMIN_BUTTON_REMOVE_USER)
+    async def ask_remove_user(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.remove_user)
+        await message.answer("chat_id کاربر برای حذف را بفرست.")
+
+    @router.message(AdminStates.remove_user)
+    async def remove_user(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        try:
+            chat_id = int((message.text or "").strip())
+        except ValueError:
+            await message.answer("chat_id باید عدد باشد.")
+            return
+
+        if chat_id == admin_chat_id:
+            await message.answer("ادمین اصلی حذف نمی‌شود.")
+            return
+
+        await allowlist_repo.remove(chat_id)
+        await state.clear()
+        await message.answer(f"کاربر {chat_id} حذف شد.", reply_markup=admin_menu_keyboard())
+
+    @router.message(F.text == ADMIN_BUTTON_ADD_PANEL)
+    async def ask_add_panel(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.add_panel)
+        await message.answer(
+            "فرمت:\n"
+            "`name|base_url|username|password`\n"
+            "مثال:\n"
+            "`main|https://1.2.3.4:20753/abc123|admin|tsvpn2000`"
+        )
+
+    @router.message(AdminStates.add_panel)
+    async def add_panel(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        parts = [p.strip() for p in (message.text or "").split("|")]
+        if len(parts) != 4 or not all(parts):
+            await message.answer("فرمت اشتباه است. دقیقا 4 بخش با | بفرست.")
+            return
+
+        name, base_url, username, password = parts
+        if not base_url.startswith("http://") and not base_url.startswith("https://"):
+            base_url = "https://" + base_url
+
+        enc = crypto.encrypt(password)
+        await panel_repo.add(name=name, base_url=base_url.rstrip("/"), username=username, password_enc=enc)
+        await state.clear()
+        await message.answer(f"پنل `{name}` ذخیره شد.", reply_markup=admin_menu_keyboard())
+
+    @router.message(F.text == ADMIN_BUTTON_TEST_PANEL)
+    async def ask_test_panel(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.test_panel)
+        await message.answer("نام پنل را بفرست.")
+
+    @router.message(AdminStates.test_panel)
+    async def test_panel(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        panel_name = (message.text or "").strip()
+        panel = await panel_repo.get_by_name(panel_name)
+        if panel is None:
+            await message.answer("پنل پیدا نشد.")
+            return
+
+        try:
+            password = crypto.decrypt(panel.password_enc)
+            async with XUIClient(
+                base_url=panel.base_url,
+                username=panel.username,
+                password=password,
+                verify_tls=xui_verify_tls,
+                timeout_seconds=request_timeout,
+            ) as xui:
+                count = await xui.test_connection()
+        except XUIError as exc:
+            await message.answer(f"تست ناموفق: {exc}")
+            return
+
+        await state.clear()
+        await message.answer(
+            f"اتصال پنل `{panel.name}` موفق بود. تعداد inbound: {count}",
+            reply_markup=admin_menu_keyboard(),
+        )
+
+    @router.message(F.text == ADMIN_BUTTON_CREATE_PROFILE)
+    async def ask_create_profile(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.create_profile)
+        await message.answer(
+            "فرمت:\n"
+            "`name|panel_name|prefix|suffix|gb|days|port:max,port:max`\n"
+            "مثال:\n"
+            "`10h|main|10h||30|10|1044:1000,1025:1000`\n"
+            "اگر suffix نمی‌خوای خالی بگذار (دو || پشت هم)."
+        )
+
+    @router.message(AdminStates.create_profile)
+    async def create_profile(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+
+        raw = (message.text or "").strip()
+        parts = raw.split("|")
+        if len(parts) != 7:
+            await message.answer("فرمت اشتباه است. باید 7 بخش باشد.")
+            return
+
+        name, panel_name, prefix, suffix, gb_raw, days_raw, ports_raw = [p.strip() for p in parts]
+        if not name or not panel_name or not prefix:
+            await message.answer("name, panel_name, prefix اجباری هستند.")
+            return
+
+        if suffix == "_":
+            suffix = ""
+
+        try:
+            gb = int(gb_raw)
+            days = int(days_raw)
+        except ValueError:
+            await message.answer("gb و days باید عدد باشند.")
+            return
+
+        if gb < 0 or days < 0:
+            await message.answer("gb و days نباید منفی باشند.")
+            return
+
+        panel = await panel_repo.get_by_name(panel_name)
+        if panel is None:
+            await message.answer("پنل پیدا نشد.")
+            return
+
+        entries = [e.strip() for e in ports_raw.split(",") if e.strip()]
+        if not entries:
+            await message.answer("حداقل یک پورت لازم است.")
+            return
+
+        requested_ports: list[tuple[int, int]] = []
+        seen_ports: set[int] = set()
+        for entry in entries:
+            if ":" not in entry:
+                await message.answer(f"فرمت پورت اشتباه: {entry}")
+                return
+            port_raw, max_raw = [x.strip() for x in entry.split(":", 1)]
+            try:
+                port = int(port_raw)
+                max_count = int(max_raw)
+            except ValueError:
+                await message.answer(f"port/max باید عدد باشد: {entry}")
+                return
+            if port in seen_ports:
+                await message.answer(f"پورت تکراری مجاز نیست: {port}")
+                return
+            if max_count <= 0:
+                await message.answer(f"max برای پورت {port} باید بیشتر از صفر باشد.")
+                return
+            seen_ports.add(port)
+            requested_ports.append((port, max_count))
+
+        try:
+            password = crypto.decrypt(panel.password_enc)
+            async with XUIClient(
+                base_url=panel.base_url,
+                username=panel.username,
+                password=password,
+                verify_tls=xui_verify_tls,
+                timeout_seconds=request_timeout,
+            ) as xui:
+                inbounds = await xui.list_inbounds()
+        except XUIError as exc:
+            await message.answer(f"خطا در اتصال پنل: {exc}")
+            return
+
+        inbound_by_port: dict[int, list[dict]] = {}
+        for inbound in inbounds:
+            try:
+                port = int(inbound.get("port"))
+            except (TypeError, ValueError):
+                continue
+            inbound_by_port.setdefault(port, []).append(inbound)
+
+        db_ports: list[tuple[int, int, int]] = []
+        for port, max_count in requested_ports:
+            matches = inbound_by_port.get(port, [])
+            if len(matches) == 0:
+                await message.answer(f"پورت {port} روی پنل پیدا نشد.")
+                return
+            if len(matches) > 1:
+                await message.answer(f"برای پورت {port} چند inbound وجود دارد؛ نامعتبر است.")
+                return
+            inbound_id = int(matches[0]["id"])
+            db_ports.append((inbound_id, port, max_count))
+
+        try:
+            profile_id = await profile_repo.create(
+                panel_id=panel.id,
+                name=name,
+                prefix=prefix,
+                suffix=suffix,
+                traffic_gb=gb,
+                expiry_days=days,
+                ports=db_ports,
+            )
+        except Exception as exc:
+            await message.answer(f"ساخت پروفایل ناموفق: {exc}")
+            return
+
+        await state.clear()
+        await message.answer(
+            f"پروفایل `{name}` با شناسه {profile_id} ساخته شد.",
+            reply_markup=admin_menu_keyboard(),
+        )
+
+    @router.message(F.text == ADMIN_BUTTON_TOGGLE_PROFILE)
+    async def ask_toggle_profile(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.toggle_profile)
+        await message.answer("فرمت: `profile_name|on` یا `profile_name|off`")
+
+    @router.message(AdminStates.toggle_profile)
+    async def toggle_profile(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        parts = [p.strip() for p in (message.text or "").split("|")]
+        if len(parts) != 2:
+            await message.answer("فرمت اشتباه است.")
+            return
+        profile_name, status = parts
+
+        profile = await profile_repo.get_by_name(profile_name)
+        if profile is None:
+            await message.answer("پروفایل پیدا نشد.")
+            return
+
+        status_l = status.lower()
+        if status_l not in {"on", "off"}:
+            await message.answer("مقدار وضعیت فقط on/off")
+            return
+
+        await profile_repo.set_active(profile.id, status_l == "on")
+        await state.clear()
+        await message.answer("وضعیت پروفایل تغییر کرد.", reply_markup=admin_menu_keyboard())
+
+    @router.message(F.text == ADMIN_BUTTON_CAPACITY)
+    async def ask_capacity(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.capacity_report)
+        await message.answer("نام پروفایل را بفرست یا `all`")
+
+    @router.message(AdminStates.capacity_report)
+    async def capacity_report(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        target = (message.text or "").strip()
+
+        profiles = await profile_repo.list_profiles(active_only=False)
+        selected = profiles if target.lower() == "all" else [p for p in profiles if p.name == target]
+        if not selected:
+            await message.answer("پروفایلی پیدا نشد.")
+            return
+
+        lines: list[str] = []
+        for profile in selected:
+            try:
+                report = await allocator.get_capacity_report(profile.id)
+            except (AllocationError, XUIError) as exc:
+                lines.append(f"- {profile.name}: خطا -> {exc}")
+                continue
+            lines.append(
+                f"- {report['profile_name']}: used={report['used']} free={report['free']} total={report['total_capacity']}"
+            )
+            for item in report["ports"]:
+                lines.append(
+                    f"  port {item['port']} | used={item['used']} free={item['free']} max={item['max']}"
+                )
+
+        await state.clear()
+        await message.answer("\n".join(lines), reply_markup=admin_menu_keyboard())
+
+    @router.message(F.text == ADMIN_BUTTON_LIST_PANELS)
+    async def list_panels(message: Message) -> None:
+        if not await guard_admin(message):
+            return
+        panels = await panel_repo.list_panels(active_only=False)
+        if not panels:
+            await message.answer("هیچ پنلی ثبت نشده.")
+            return
+        lines = ["پنل‌ها:"]
+        for panel in panels:
+            status = "on" if panel.active else "off"
+            lines.append(f"- {panel.name} ({status}) -> {panel.base_url}")
+        await message.answer("\n".join(lines))
+
+    @router.message(F.text == ADMIN_BUTTON_LIST_PROFILES)
+    async def list_profiles(message: Message) -> None:
+        if not await guard_admin(message):
+            return
+        profiles = await profile_repo.list_profiles(active_only=False)
+        if not profiles:
+            await message.answer("هیچ پروفایلی ثبت نشده.")
+            return
+        lines = ["پروفایل‌ها:"]
+        for profile in profiles:
+            status = "on" if profile.active else "off"
+            ports = await profile_repo.list_ports(profile.id)
+            ports_str = ", ".join(f"{p.port}:{p.max_active_clients}" for p in ports)
+            lines.append(
+                f"- {profile.name} ({status}) panel={profile.panel_id} prefix={profile.prefix} gb={profile.traffic_gb} days={profile.expiry_days} ports=[{ports_str}]"
+            )
+        await message.answer("\n".join(lines))
+
+    return router

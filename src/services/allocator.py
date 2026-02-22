@@ -163,8 +163,6 @@ class AllocatorService:
                     raise AllocationError("Counter row missing")
 
                 last_number = int(row["last_number"])
-                rr_cursor = int(profile.rr_index) % len(port_runtimes)
-
                 staged_clients: list[dict[str, Any]] = []
                 staged_records: list[tuple[int, str, str]] = []
                 assigned_by_inbound: dict[int, list[dict[str, Any]]] = defaultdict(list)
@@ -181,17 +179,12 @@ class AllocatorService:
                         names_in_request=names_in_request,
                     )
 
-                    selected_idx = self._select_next_port_index(
-                        port_runtimes,
-                        local_used,
-                        start_index=rr_cursor,
-                    )
+                    selected_idx = self._select_next_port_index_fill_first(port_runtimes, local_used)
                     if selected_idx is None:
                         raise AllocationError("Capacity check failed during allocation")
 
                     runtime_port = port_runtimes[selected_idx]
                     local_used[selected_idx] += 1
-                    rr_cursor = (selected_idx + 1) % len(port_runtimes)
 
                     client = self._build_client_payload(
                         protocol=runtime_port.protocol,
@@ -228,10 +221,6 @@ class AllocatorService:
                 await conn.execute(
                     "UPDATE profile_counters SET last_number = ? WHERE profile_id = ?",
                     (last_number, profile.id),
-                )
-                await conn.execute(
-                    "UPDATE profiles SET rr_index = ? WHERE id = ?",
-                    (rr_cursor, profile.id),
                 )
 
         return AllocationResult(profile_name=profile.name, quantity=quantity, links=all_links)
@@ -322,16 +311,11 @@ class AllocatorService:
         return runtimes
 
     @staticmethod
-    def _select_next_port_index(
+    def _select_next_port_index_fill_first(
         port_runtimes: list[_PortRuntime],
         local_used: list[int],
-        *,
-        start_index: int,
     ) -> int | None:
-        count = len(port_runtimes)
-        for offset in range(count):
-            idx = (start_index + offset) % count
-            runtime = port_runtimes[idx]
+        for idx, runtime in enumerate(port_runtimes):
             used = runtime.active_clients + local_used[idx]
             if used < runtime.max_active_clients:
                 return idx

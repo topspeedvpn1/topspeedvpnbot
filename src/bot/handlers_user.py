@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import re
+from urllib.parse import unquote
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
@@ -20,6 +24,27 @@ def build_user_router(
     allocator: AllocatorService,
 ) -> Router:
     router = Router(name="user")
+
+    def extract_config_number(link: str, default_index: int) -> str:
+        text = (link or "").strip()
+        if not text:
+            return str(default_index)
+
+        decoded = unquote(text)
+
+        # Prefer number in fragment, e.g. #10m293 => 293
+        fragment = decoded.split("#", 1)[1] if "#" in decoded else ""
+        if fragment:
+            m = re.search(r"(\d+)$", fragment)
+            if m:
+                return m.group(1)
+
+        # Fallback: trailing digits anywhere in full link
+        m = re.search(r"(\d+)\D*$", decoded)
+        if m:
+            return m.group(1)
+
+        return str(default_index)
 
     async def is_allowed(chat_id: int) -> bool:
         if chat_id == admin_chat_id:
@@ -135,11 +160,13 @@ def build_user_router(
             await callback.message.answer(f"خطای غیرمنتظره: {exc}")
             return
 
-        chunks = LinkResolverService.chunk_links(result.links, chunk_size=20)
         await callback.message.answer(
             f"{result.quantity} کانفیگ از مدل `{result.profile_name}` ساخته شد."
         )
-        for idx, chunk in enumerate(chunks, start=1):
-            await callback.message.answer(f"بخش {idx}/{len(chunks)}:\n{chunk}")
+        for idx, link in enumerate(result.links, start=1):
+            await callback.message.answer(link)
+            await callback.message.answer(extract_config_number(link, idx))
+            # Small delay to reduce Telegram flood limits on large batches.
+            await asyncio.sleep(0.08)
 
     return router

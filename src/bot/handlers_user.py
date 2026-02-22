@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -25,26 +25,31 @@ def build_user_router(
 ) -> Router:
     router = Router(name="user")
 
-    def extract_config_number(link: str, default_index: int) -> str:
+    def normalize_link_and_extract_number(link: str, default_index: int) -> tuple[str, str]:
         text = (link or "").strip()
         if not text:
-            return str(default_index)
+            return "", str(default_index)
 
-        decoded = unquote(text)
+        head, sep, fragment = text.partition("#")
+        if not sep:
+            return text, str(default_index)
 
-        # Prefer number in fragment, e.g. #10m293 => 293
-        fragment = decoded.split("#", 1)[1] if "#" in decoded else ""
-        if fragment:
-            m = re.search(r"(\d+)$", fragment)
-            if m:
-                return m.group(1)
+        decoded_fragment = unquote(fragment).strip()
+        # 3x-ui may append traffic/expiry metadata after "-" in link fragment.
+        clean_fragment = decoded_fragment.split("-", 1)[0].strip() if decoded_fragment else ""
+        if not clean_fragment:
+            clean_fragment = decoded_fragment
 
-        # Fallback: trailing digits anywhere in full link
-        m = re.search(r"(\d+)\D*$", decoded)
+        normalized = text
+        if clean_fragment:
+            encoded = quote(clean_fragment, safe="-._~")
+            normalized = f"{head}#{encoded}"
+
+        m = re.search(r"(\d+)$", clean_fragment)
         if m:
-            return m.group(1)
+            return normalized, m.group(1)
 
-        return str(default_index)
+        return normalized, str(default_index)
 
     async def is_allowed(chat_id: int) -> bool:
         if chat_id == admin_chat_id:
@@ -164,8 +169,9 @@ def build_user_router(
             f"{result.quantity} کانفیگ از مدل `{result.profile_name}` ساخته شد."
         )
         for idx, link in enumerate(result.links, start=1):
-            await callback.message.answer(link)
-            await callback.message.answer(extract_config_number(link, idx))
+            normalized_link, number = normalize_link_and_extract_number(link, idx)
+            await callback.message.answer(normalized_link)
+            await callback.message.answer(number)
             # Small delay to reduce Telegram flood limits on large batches.
             await asyncio.sleep(0.08)
 

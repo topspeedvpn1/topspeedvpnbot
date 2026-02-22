@@ -301,6 +301,8 @@ def build_admin_router(
         await message.answer(
             "فرمت:\n"
             "`name|panel_name|prefix|suffix|gb|days|port:max,port:max`\n"
+            "یا بدون suffix:\n"
+            "`name|panel_name|prefix|gb|days|port:max,port:max`\n"
             "مثال:\n"
             "`10h|main|10h||30|10|1044:1000,1025:1000`\n"
             "اگر suffix نمی‌خوای خالی بگذار (دو || پشت هم)."
@@ -313,11 +315,16 @@ def build_admin_router(
 
         raw = (message.text or "").strip()
         parts = raw.split("|")
-        if len(parts) != 7:
-            await message.answer("فرمت اشتباه است. باید 7 بخش باشد.")
+        if len(parts) not in {6, 7}:
+            await message.answer("فرمت اشتباه است. باید 6 یا 7 بخش باشد.")
             return
 
-        name, panel_name, prefix, suffix, gb_raw, days_raw, ports_raw = [p.strip() for p in parts]
+        if len(parts) == 7:
+            name, panel_name, prefix, suffix, gb_raw, days_raw, ports_raw = [p.strip() for p in parts]
+        else:
+            name, panel_name, prefix, gb_raw, days_raw, ports_raw = [p.strip() for p in parts]
+            suffix = ""
+
         if not name or not panel_name or not prefix:
             await message.answer("name, panel_name, prefix اجباری هستند.")
             return

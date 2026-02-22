@@ -60,6 +60,7 @@ Then use menu buttons.
 
 - Create profile:
   - `name|panel_name|prefix|suffix|gb|days|port:max,port:max`
+  - `name|panel_name|prefix|gb|days|port:max,port:max` (when suffix is empty)
   - Example: `10h|main|10h||30|10|1044:1000,1025:1000`
   - Note: duplicate ports are rejected.
 

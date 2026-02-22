@@ -65,3 +65,30 @@ def quantity_keyboard(profile_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=str(qty), callback_data=f"qty:{profile_id}:{qty}")
         )
     return builder.as_markup()
+
+
+def panel_list_keyboard(panels: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for panel_id, panel_name in panels:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🗑 حذف {panel_name}",
+                callback_data=f"admin_panel_delete:{panel_id}",
+            )
+        )
+    return builder.as_markup()
+
+
+def panel_delete_confirm_keyboard(panel_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ تایید حذف",
+            callback_data=f"admin_panel_confirm_delete:{panel_id}",
+        ),
+        InlineKeyboardButton(
+            text="❌ انصراف",
+            callback_data="admin_panel_delete_cancel",
+        ),
+    )
+    return builder.as_markup()

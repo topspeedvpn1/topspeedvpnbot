@@ -44,6 +44,9 @@ class PanelRepository:
     async def set_active(self, panel_id: int, active: bool) -> None:
         await self.db.execute("UPDATE panels SET active = ? WHERE id = ?", (1 if active else 0, panel_id))
 
+    async def delete(self, panel_id: int) -> None:
+        await self.db.execute("DELETE FROM panels WHERE id = ?", (panel_id,))
+
     @staticmethod
     def _row_to_panel(row) -> Panel | None:
         if row is None:

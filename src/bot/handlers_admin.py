@@ -3,7 +3,7 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
 from src.bot.keyboards import (
     ADMIN_BUTTON_ADD_PANEL,
@@ -16,6 +16,8 @@ from src.bot.keyboards import (
     ADMIN_BUTTON_TEST_PANEL,
     ADMIN_BUTTON_TOGGLE_PROFILE,
     admin_menu_keyboard,
+    panel_delete_confirm_keyboard,
+    panel_list_keyboard,
 )
 from src.bot.states import AdminStates
 from src.repositories.allowlist import AllowlistRepository
@@ -45,6 +47,12 @@ def build_admin_router(
     async def guard_admin(message: Message) -> bool:
         if not is_admin(message.from_user.id):
             await message.answer("این بخش فقط برای ادمین است.")
+            return False
+        return True
+
+    async def guard_admin_callback(callback: CallbackQuery) -> bool:
+        if not is_admin(callback.from_user.id):
+            await callback.answer("این بخش فقط برای ادمین است.", show_alert=True)
             return False
         return True
 
@@ -388,10 +396,62 @@ def build_admin_router(
             await message.answer("هیچ پنلی ثبت نشده.")
             return
         lines = ["پنل‌ها:"]
+        panel_buttons: list[tuple[int, str]] = []
         for panel in panels:
             status = "on" if panel.active else "off"
             lines.append(f"- {panel.name} ({status}) -> {panel.base_url}")
-        await message.answer("\n".join(lines))
+            panel_buttons.append((panel.id, panel.name))
+        await message.answer("\n".join(lines), reply_markup=panel_list_keyboard(panel_buttons))
+
+    @router.callback_query(F.data.startswith("admin_panel_delete:"))
+    async def ask_delete_panel(callback: CallbackQuery) -> None:
+        if not await guard_admin_callback(callback):
+            return
+        _, panel_id_raw = callback.data.split(":", 1)
+        try:
+            panel_id = int(panel_id_raw)
+        except ValueError:
+            await callback.answer("شناسه پنل نامعتبر است.", show_alert=True)
+            return
+
+        panel = await panel_repo.get_by_id(panel_id)
+        if panel is None:
+            await callback.answer("پنل پیدا نشد.", show_alert=True)
+            return
+
+        await callback.message.answer(
+            f"حذف پنل `{panel.name}` تایید شود؟\n"
+            "توجه: پروفایل‌های متصل به این پنل هم حذف می‌شوند.",
+            reply_markup=panel_delete_confirm_keyboard(panel.id),
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin_panel_confirm_delete:"))
+    async def confirm_delete_panel(callback: CallbackQuery) -> None:
+        if not await guard_admin_callback(callback):
+            return
+        _, panel_id_raw = callback.data.split(":", 1)
+        try:
+            panel_id = int(panel_id_raw)
+        except ValueError:
+            await callback.answer("شناسه پنل نامعتبر است.", show_alert=True)
+            return
+
+        panel = await panel_repo.get_by_id(panel_id)
+        if panel is None:
+            await callback.answer("پنل قبلا حذف شده یا وجود ندارد.", show_alert=True)
+            return
+
+        await panel_repo.delete(panel_id)
+        await callback.message.edit_text(f"پنل `{panel.name}` حذف شد.")
+        await callback.answer("حذف شد")
+
+    @router.callback_query(F.data == "admin_panel_delete_cancel")
+    async def cancel_delete_panel(callback: CallbackQuery) -> None:
+        if not await guard_admin_callback(callback):
+            return
+        await callback.message.edit_text("حذف پنل لغو شد.")
+        await callback.answer("لغو شد")
 
     @router.message(F.text == ADMIN_BUTTON_LIST_PROFILES)
     async def list_profiles(message: Message) -> None:

@@ -8,10 +8,12 @@ from aiogram.types import CallbackQuery, Message
 from src.bot.keyboards import (
     ADMIN_BUTTON_ADD_PANEL,
     ADMIN_BUTTON_ADD_USER,
+    ADMIN_BUTTON_ASSIGN_USER_PROFILES,
     ADMIN_BUTTON_CAPACITY,
     ADMIN_BUTTON_CREATE_PROFILE,
     ADMIN_BUTTON_LIST_PANELS,
     ADMIN_BUTTON_LIST_PROFILES,
+    ADMIN_BUTTON_LIST_USERS,
     ADMIN_BUTTON_REMOVE_USER,
     ADMIN_BUTTON_TEST_PANEL,
     ADMIN_BUTTON_TOGGLE_PROFILE,
@@ -78,25 +80,38 @@ def build_admin_router(
         if not await guard_admin(message):
             return
         await state.set_state(AdminStates.add_user)
-        await message.answer("فرمت: `chat_id [note]`\nمثال: `123456789 vip`")
+        await message.answer("فرمت: `chat_id|name`\nمثال: `123456789|علی`")
 
     @router.message(AdminStates.add_user)
     async def add_user(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        parts = (message.text or "").strip().split(maxsplit=1)
-        if not parts:
+        raw = (message.text or "").strip()
+        if not raw:
             await message.answer("فرمت اشتباه است.")
             return
+        if "|" in raw:
+            parts = [p.strip() for p in raw.split("|", 1)]
+        else:
+            parts = raw.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.answer("فرمت صحیح: `chat_id|name`")
+            return
+        chat_raw, customer_name = parts[0], parts[1].strip()
+        if not customer_name:
+            await message.answer("نام مشتری خالی نباشد.")
+            return
         try:
-            chat_id = int(parts[0])
+            chat_id = int(chat_raw)
         except ValueError:
             await message.answer("chat_id باید عدد باشد.")
             return
-        note = parts[1] if len(parts) > 1 else ""
-        await allowlist_repo.add(chat_id, note)
+        await allowlist_repo.add(chat_id, customer_name)
         await state.clear()
-        await message.answer(f"کاربر {chat_id} اضافه شد.", reply_markup=admin_menu_keyboard())
+        await message.answer(
+            f"مشتری `{customer_name}` با chat_id `{chat_id}` اضافه شد.",
+            reply_markup=admin_menu_keyboard(),
+        )
 
     @router.message(F.text == ADMIN_BUTTON_REMOVE_USER)
     async def ask_remove_user(message: Message, state: FSMContext) -> None:
@@ -122,6 +137,94 @@ def build_admin_router(
         await allowlist_repo.remove(chat_id)
         await state.clear()
         await message.answer(f"کاربر {chat_id} حذف شد.", reply_markup=admin_menu_keyboard())
+
+    @router.message(F.text == ADMIN_BUTTON_ASSIGN_USER_PROFILES)
+    async def ask_assign_user_profiles(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.assign_user_profiles)
+        await message.answer(
+            "فرمت: `chat_id|profile1,profile2`\n"
+            "مثال: `123456789|10h,20h`\n"
+            "برای دسترسی به همه پروفایل‌ها: `123456789|all`"
+        )
+
+    @router.message(AdminStates.assign_user_profiles)
+    async def assign_user_profiles(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        raw = (message.text or "").strip()
+        parts = [p.strip() for p in raw.split("|", 1)]
+        if len(parts) != 2:
+            await message.answer("فرمت اشتباه است. از `chat_id|profile1,profile2` استفاده کن.")
+            return
+
+        chat_raw, profile_raw = parts
+        try:
+            chat_id = int(chat_raw)
+        except ValueError:
+            await message.answer("chat_id باید عدد باشد.")
+            return
+
+        user = await allowlist_repo.get_user(chat_id)
+        if user is None:
+            await message.answer("این مشتری در لیست مجاز نیست. اول مشتری را اضافه کن.")
+            return
+
+        profile_token = profile_raw.strip().lower()
+        if profile_token == "all":
+            await allowlist_repo.set_profile_access(chat_id, [])
+            await state.clear()
+            await message.answer(
+                f"دسترسی مشتری `{user[1]}` به همه پروفایل‌های فعال تنظیم شد.",
+                reply_markup=admin_menu_keyboard(),
+            )
+            return
+
+        requested_names = [x.strip() for x in profile_raw.split(",") if x.strip()]
+        if not requested_names:
+            await message.answer("حداقل یک نام پروفایل بده یا `all` بفرست.")
+            return
+
+        profiles = await profile_repo.list_profiles(active_only=False)
+        by_name = {p.name: p for p in profiles}
+        missing = [name for name in requested_names if name not in by_name]
+        if missing:
+            await message.answer(f"پروفایل پیدا نشد: {', '.join(missing)}")
+            return
+
+        profile_ids = [by_name[name].id for name in requested_names]
+        await allowlist_repo.set_profile_access(chat_id, profile_ids)
+        await state.clear()
+        await message.answer(
+            f"دسترسی مشتری `{user[1]}` روی این پروفایل‌ها تنظیم شد: {', '.join(requested_names)}",
+            reply_markup=admin_menu_keyboard(),
+        )
+
+    @router.message(F.text == ADMIN_BUTTON_LIST_USERS)
+    async def list_users(message: Message) -> None:
+        if not await guard_admin(message):
+            return
+        users = await allowlist_repo.list_users()
+        if not users:
+            await message.answer("هیچ مشتری ثبت نشده.")
+            return
+
+        profiles = await profile_repo.list_profiles(active_only=False)
+        profile_by_id = {p.id: p.name for p in profiles}
+
+        lines = ["مشتری‌ها:"]
+        for chat_id, name in users:
+            access_ids = await allowlist_repo.get_profile_access(chat_id)
+            if access_ids:
+                names = [profile_by_id.get(pid, f"#{pid}") for pid in sorted(access_ids)]
+                access_text = ", ".join(names)
+            else:
+                access_text = "همه پروفایل‌ها"
+            display_name = name if name else "-"
+            lines.append(f"- {display_name} | {chat_id} | دسترسی: {access_text}")
+
+        await message.answer("\n".join(lines))
 
     @router.message(F.text == ADMIN_BUTTON_ADD_PANEL)
     async def ask_add_panel(message: Message, state: FSMContext) -> None:

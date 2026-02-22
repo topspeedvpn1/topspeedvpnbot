@@ -58,6 +58,15 @@ CREATE TABLE IF NOT EXISTS profile_counters (
   FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS user_profile_access (
+  chat_id INTEGER NOT NULL,
+  profile_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY(chat_id, profile_id),
+  FOREIGN KEY(chat_id) REFERENCES allowed_users(chat_id) ON DELETE CASCADE,
+  FOREIGN KEY(profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS issued_configs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   profile_id INTEGER NOT NULL,
@@ -75,6 +84,8 @@ CREATE INDEX IF NOT EXISTS idx_issued_configs_profile_created
   ON issued_configs(profile_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_profile_ports_profile_sort
   ON profile_ports(profile_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_user_profile_access_chat
+  ON user_profile_access(chat_id);
 """
 
 

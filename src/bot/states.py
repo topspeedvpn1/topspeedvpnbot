@@ -4,6 +4,7 @@ from aiogram.fsm.state import State, StatesGroup
 class AdminStates(StatesGroup):
     add_user = State()
     remove_user = State()
+    assign_user_profiles = State()
     add_panel = State()
     test_panel = State()
     create_profile = State()

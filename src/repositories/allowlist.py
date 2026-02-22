@@ -33,3 +33,32 @@ class AllowlistRepository:
             "SELECT chat_id, COALESCE(note, '') AS note FROM allowed_users ORDER BY created_at ASC"
         )
         return [(int(r["chat_id"]), str(r["note"])) for r in rows]
+
+    async def get_user(self, chat_id: int) -> tuple[int, str] | None:
+        row = await self.db.fetchone(
+            "SELECT chat_id, COALESCE(note, '') AS note FROM allowed_users WHERE chat_id = ?",
+            (chat_id,),
+        )
+        if row is None:
+            return None
+        return (int(row["chat_id"]), str(row["note"]))
+
+    async def set_profile_access(self, chat_id: int, profile_ids: list[int]) -> None:
+        now = int(time.time())
+        async with self.db.transaction() as conn:
+            await conn.execute("DELETE FROM user_profile_access WHERE chat_id = ?", (chat_id,))
+            for profile_id in profile_ids:
+                await conn.execute(
+                    """
+                    INSERT INTO user_profile_access(chat_id, profile_id, created_at)
+                    VALUES(?, ?, ?)
+                    """,
+                    (chat_id, profile_id, now),
+                )
+
+    async def get_profile_access(self, chat_id: int) -> set[int]:
+        rows = await self.db.fetchall(
+            "SELECT profile_id FROM user_profile_access WHERE chat_id = ?",
+            (chat_id,),
+        )
+        return {int(r["profile_id"]) for r in rows}

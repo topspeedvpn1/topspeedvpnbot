@@ -26,6 +26,15 @@ def build_user_router(
             return True
         return await allowlist_repo.is_allowed(chat_id)
 
+    async def get_visible_profiles(chat_id: int):
+        profiles = await profile_repo.list_profiles(active_only=True)
+        if chat_id == admin_chat_id:
+            return profiles
+        access_ids = await allowlist_repo.get_profile_access(chat_id)
+        if not access_ids:
+            return profiles
+        return [p for p in profiles if p.id in access_ids]
+
     @router.message(Command("start"))
     async def start(message: Message) -> None:
         chat_id = message.from_user.id
@@ -36,7 +45,7 @@ def build_user_router(
             )
             return
 
-        profiles = await profile_repo.list_profiles(active_only=True)
+        profiles = await get_visible_profiles(chat_id)
         if not profiles:
             if chat_id == admin_chat_id:
                 await message.answer(
@@ -46,7 +55,7 @@ def build_user_router(
                     "2) بعد در ربات `ساخت پروفایل` را انجام بده"
                 )
             else:
-                await message.answer("فعلا مدلی برای فروش فعال نیست.")
+                await message.answer("فعلا مدلی برای شما فعال نیست. به ادمین پیام بده.")
             return
 
         menu = [(p.id, p.name) for p in profiles]
@@ -73,6 +82,11 @@ def build_user_router(
         if profile is None or not profile.active:
             await callback.answer("این مدل غیرفعال است", show_alert=True)
             return
+        if chat_id != admin_chat_id:
+            access_ids = await allowlist_repo.get_profile_access(chat_id)
+            if access_ids and profile.id not in access_ids:
+                await callback.answer("این مدل برای شما فعال نیست.", show_alert=True)
+                return
 
         await callback.message.answer(
             f"مدل `{profile.name}` انتخاب شد. چه تعداد می‌خوای؟",
@@ -94,6 +108,16 @@ def build_user_router(
         except ValueError:
             await callback.answer("درخواست نامعتبر", show_alert=True)
             return
+
+        profile = await profile_repo.get_by_id(profile_id)
+        if profile is None or not profile.active:
+            await callback.answer("این مدل غیرفعال است", show_alert=True)
+            return
+        if chat_id != admin_chat_id:
+            access_ids = await allowlist_repo.get_profile_access(chat_id)
+            if access_ids and profile.id not in access_ids:
+                await callback.answer("این مدل برای شما فعال نیست.", show_alert=True)
+                return
 
         await callback.answer("در حال ساخت...")
         await callback.message.answer("در حال ساخت کانفیگ‌ها، کمی صبر کن...")

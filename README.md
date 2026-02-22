@@ -50,6 +50,10 @@ In Telegram (as admin):
 Then use menu buttons.
 
 ### Input formats
+- Add customer:
+  - `chat_id|name`
+  - Example: `123456789|علی`
+
 - Add panel:
   - `name|base_url|username|password`
   - Example: `main|https://1.2.3.4:20753/abc123|admin|tsvpn2000`
@@ -62,6 +66,11 @@ Then use menu buttons.
 - Toggle profile:
   - `profile_name|on`
   - `profile_name|off`
+
+- Assign profile access to customer:
+  - `chat_id|profile1,profile2`
+  - Example: `123456789|10h,20h`
+  - Use `chat_id|all` to let a user see all active profiles.
 
 ## Local run (development)
 ```bash

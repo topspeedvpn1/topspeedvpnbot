@@ -18,9 +18,19 @@ ADMIN_BUTTON_CAPACITY = "گزارش ظرفیت"
 ADMIN_BUTTON_LIST_PANELS = "لیست پنل‌ها"
 ADMIN_BUTTON_LIST_PROFILES = "لیست پروفایل‌ها"
 ADMIN_BUTTON_BACK = "بازگشت"
+ADMIN_BUTTON_MAIN_MENU = "منوی اصلی"
+ADMIN_SECTION_USERS = "مشتری‌ها"
+ADMIN_SECTION_PROFILES = "پروفایل‌ها"
+ADMIN_SECTION_PANELS = "پنل‌ها"
+ADMIN_SECTION_REPORTS = "گزارش‌ها"
 USER_BUTTON_BACK = "بازگشت"
 
 ADMIN_BUTTONS = {
+    ADMIN_BUTTON_MAIN_MENU,
+    ADMIN_SECTION_USERS,
+    ADMIN_SECTION_PROFILES,
+    ADMIN_SECTION_PANELS,
+    ADMIN_SECTION_REPORTS,
     ADMIN_BUTTON_ADD_USER,
     ADMIN_BUTTON_REMOVE_USER,
     ADMIN_BUTTON_ASSIGN_USER_PROFILES,
@@ -40,31 +50,12 @@ ADMIN_BUTTONS = {
 def admin_menu_keyboard() -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardBuilder()
     kb.row(
-        KeyboardButton(text=ADMIN_BUTTON_ADD_USER),
-        KeyboardButton(text=ADMIN_BUTTON_REMOVE_USER),
+        KeyboardButton(text=ADMIN_SECTION_USERS),
+        KeyboardButton(text=ADMIN_SECTION_PROFILES),
     )
     kb.row(
-        KeyboardButton(text=ADMIN_BUTTON_ASSIGN_USER_PROFILES),
-        KeyboardButton(text=ADMIN_BUTTON_LIST_USERS),
-    )
-    kb.row(
-        KeyboardButton(text=ADMIN_BUTTON_ADD_PANEL),
-        KeyboardButton(text=ADMIN_BUTTON_TEST_PANEL),
-    )
-    kb.row(
-        KeyboardButton(text=ADMIN_BUTTON_CREATE_PROFILE),
-        KeyboardButton(text=ADMIN_BUTTON_ADD_PROFILE_PORT),
-    )
-    kb.row(
-        KeyboardButton(text=ADMIN_BUTTON_EDIT_PORT_CAPACITY),
-        KeyboardButton(text=ADMIN_BUTTON_TOGGLE_PROFILE),
-    )
-    kb.row(
-        KeyboardButton(text=ADMIN_BUTTON_CAPACITY),
-    )
-    kb.row(
-        KeyboardButton(text=ADMIN_BUTTON_LIST_PANELS),
-        KeyboardButton(text=ADMIN_BUTTON_LIST_PROFILES),
+        KeyboardButton(text=ADMIN_SECTION_PANELS),
+        KeyboardButton(text=ADMIN_SECTION_REPORTS),
     )
     return kb.as_markup(resize_keyboard=True)
 
@@ -72,6 +63,53 @@ def admin_menu_keyboard() -> ReplyKeyboardMarkup:
 def admin_back_keyboard() -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardBuilder()
     kb.row(KeyboardButton(text=ADMIN_BUTTON_BACK))
+    return kb.as_markup(resize_keyboard=True)
+
+
+def admin_users_keyboard() -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardBuilder()
+    kb.row(
+        KeyboardButton(text=ADMIN_BUTTON_ADD_USER),
+        KeyboardButton(text=ADMIN_BUTTON_REMOVE_USER),
+    )
+    kb.row(
+        KeyboardButton(text=ADMIN_BUTTON_ASSIGN_USER_PROFILES),
+        KeyboardButton(text=ADMIN_BUTTON_LIST_USERS),
+    )
+    kb.row(KeyboardButton(text=ADMIN_BUTTON_MAIN_MENU))
+    return kb.as_markup(resize_keyboard=True)
+
+
+def admin_profiles_keyboard() -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardBuilder()
+    kb.row(
+        KeyboardButton(text=ADMIN_BUTTON_CREATE_PROFILE),
+        KeyboardButton(text=ADMIN_BUTTON_TOGGLE_PROFILE),
+    )
+    kb.row(
+        KeyboardButton(text=ADMIN_BUTTON_ADD_PROFILE_PORT),
+        KeyboardButton(text=ADMIN_BUTTON_EDIT_PORT_CAPACITY),
+    )
+    kb.row(KeyboardButton(text=ADMIN_BUTTON_LIST_PROFILES))
+    kb.row(KeyboardButton(text=ADMIN_BUTTON_MAIN_MENU))
+    return kb.as_markup(resize_keyboard=True)
+
+
+def admin_panels_keyboard() -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardBuilder()
+    kb.row(
+        KeyboardButton(text=ADMIN_BUTTON_ADD_PANEL),
+        KeyboardButton(text=ADMIN_BUTTON_TEST_PANEL),
+    )
+    kb.row(KeyboardButton(text=ADMIN_BUTTON_LIST_PANELS))
+    kb.row(KeyboardButton(text=ADMIN_BUTTON_MAIN_MENU))
+    return kb.as_markup(resize_keyboard=True)
+
+
+def admin_reports_keyboard() -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardBuilder()
+    kb.row(KeyboardButton(text=ADMIN_BUTTON_CAPACITY))
+    kb.row(KeyboardButton(text=ADMIN_BUTTON_MAIN_MENU))
     return kb.as_markup(resize_keyboard=True)
 
 

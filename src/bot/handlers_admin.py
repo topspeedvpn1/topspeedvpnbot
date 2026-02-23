@@ -17,11 +17,20 @@ from src.bot.keyboards import (
     ADMIN_BUTTON_LIST_PANELS,
     ADMIN_BUTTON_LIST_PROFILES,
     ADMIN_BUTTON_LIST_USERS,
+    ADMIN_BUTTON_MAIN_MENU,
     ADMIN_BUTTON_REMOVE_USER,
+    ADMIN_SECTION_PANELS,
+    ADMIN_SECTION_PROFILES,
+    ADMIN_SECTION_REPORTS,
+    ADMIN_SECTION_USERS,
     ADMIN_BUTTON_TEST_PANEL,
     ADMIN_BUTTON_TOGGLE_PROFILE,
     admin_back_keyboard,
     admin_menu_keyboard,
+    admin_panels_keyboard,
+    admin_profiles_keyboard,
+    admin_reports_keyboard,
+    admin_users_keyboard,
     panel_delete_confirm_keyboard,
     panel_list_keyboard,
 )
@@ -64,10 +73,13 @@ def build_admin_router(
 
     async def back_to_admin_menu(message: Message, state: FSMContext) -> None:
         await state.clear()
-        await message.answer("به منوی ادمین برگشتی.", reply_markup=admin_menu_keyboard())
+        await message.answer("به منوی اصلی ادمین برگشتی.", reply_markup=admin_menu_keyboard())
 
     def wants_back(message: Message) -> bool:
         return (message.text or "").strip() == ADMIN_BUTTON_BACK
+
+    def wants_main_menu(message: Message) -> bool:
+        return (message.text or "").strip() == ADMIN_BUTTON_MAIN_MENU
 
     @router.message(Command("admin"))
     async def admin_menu(message: Message, state: FSMContext) -> None:
@@ -75,7 +87,7 @@ def build_admin_router(
             return
         await state.clear()
         await message.answer(
-            "پنل ادمین باز شد. یکی از گزینه‌ها را انتخاب کن.",
+            "پنل ادمین باز شد. یک بخش را انتخاب کن.",
             reply_markup=admin_menu_keyboard(),
         )
 
@@ -94,6 +106,41 @@ def build_admin_router(
         await state.clear()
         await message.answer("عملیات لغو شد.", reply_markup=admin_menu_keyboard())
 
+    @router.message(F.text == ADMIN_BUTTON_MAIN_MENU)
+    async def open_main_menu(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.clear()
+        await message.answer("منوی اصلی ادمین:", reply_markup=admin_menu_keyboard())
+
+    @router.message(F.text == ADMIN_SECTION_USERS)
+    async def open_users_panel(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.clear()
+        await message.answer("مدیریت مشتری‌ها:", reply_markup=admin_users_keyboard())
+
+    @router.message(F.text == ADMIN_SECTION_PROFILES)
+    async def open_profiles_panel(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.clear()
+        await message.answer("مدیریت پروفایل‌ها:", reply_markup=admin_profiles_keyboard())
+
+    @router.message(F.text == ADMIN_SECTION_PANELS)
+    async def open_panels_panel(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.clear()
+        await message.answer("مدیریت پنل‌ها:", reply_markup=admin_panels_keyboard())
+
+    @router.message(F.text == ADMIN_SECTION_REPORTS)
+    async def open_reports_panel(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.clear()
+        await message.answer("بخش گزارش‌ها:", reply_markup=admin_reports_keyboard())
+
     @router.message(F.text == ADMIN_BUTTON_ADD_USER)
     async def ask_add_user(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
@@ -110,7 +157,7 @@ def build_admin_router(
     async def add_user(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
         raw = (message.text or "").strip()
@@ -137,7 +184,7 @@ def build_admin_router(
         await state.clear()
         await message.answer(
             f"مشتری `{customer_name}` با chat_id `{chat_id}` اضافه شد.",
-            reply_markup=admin_menu_keyboard(),
+            reply_markup=admin_users_keyboard(),
         )
 
     @router.message(F.text == ADMIN_BUTTON_REMOVE_USER)
@@ -155,7 +202,7 @@ def build_admin_router(
     async def remove_user(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
         try:
@@ -170,7 +217,7 @@ def build_admin_router(
 
         await allowlist_repo.remove(chat_id)
         await state.clear()
-        await message.answer(f"کاربر {chat_id} حذف شد.", reply_markup=admin_menu_keyboard())
+        await message.answer(f"کاربر {chat_id} حذف شد.", reply_markup=admin_users_keyboard())
 
     @router.message(F.text == ADMIN_BUTTON_ASSIGN_USER_PROFILES)
     async def ask_assign_user_profiles(message: Message, state: FSMContext) -> None:
@@ -189,7 +236,7 @@ def build_admin_router(
     async def assign_user_profiles(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
         raw = (message.text or "").strip()
@@ -216,7 +263,7 @@ def build_admin_router(
             await state.clear()
             await message.answer(
                 f"دسترسی مشتری `{user[1]}` به همه پروفایل‌های فعال تنظیم شد.",
-                reply_markup=admin_menu_keyboard(),
+                reply_markup=admin_users_keyboard(),
             )
             return
 
@@ -237,7 +284,7 @@ def build_admin_router(
         await state.clear()
         await message.answer(
             f"دسترسی مشتری `{user[1]}` روی این پروفایل‌ها تنظیم شد: {', '.join(requested_names)}",
-            reply_markup=admin_menu_keyboard(),
+            reply_markup=admin_users_keyboard(),
         )
 
     @router.message(F.text == ADMIN_BUTTON_LIST_USERS)
@@ -263,7 +310,7 @@ def build_admin_router(
             display_name = name if name else "-"
             lines.append(f"- {display_name} | {chat_id} | دسترسی: {access_text}")
 
-        await message.answer("\n".join(lines))
+        await message.answer("\n".join(lines), reply_markup=admin_users_keyboard())
 
     @router.message(F.text == ADMIN_BUTTON_ADD_PANEL)
     async def ask_add_panel(message: Message, state: FSMContext) -> None:
@@ -283,7 +330,7 @@ def build_admin_router(
     async def add_panel(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
         parts = [p.strip() for p in (message.text or "").split("|")]
@@ -298,7 +345,7 @@ def build_admin_router(
         enc = crypto.encrypt(password)
         await panel_repo.add(name=name, base_url=base_url.rstrip("/"), username=username, password_enc=enc)
         await state.clear()
-        await message.answer(f"پنل `{name}` ذخیره شد.", reply_markup=admin_menu_keyboard())
+        await message.answer(f"پنل `{name}` ذخیره شد.", reply_markup=admin_panels_keyboard())
 
     @router.message(F.text == ADMIN_BUTTON_TEST_PANEL)
     async def ask_test_panel(message: Message, state: FSMContext) -> None:
@@ -317,7 +364,7 @@ def build_admin_router(
     async def test_panel(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
         panel_name = (message.text or "").strip()
@@ -343,7 +390,7 @@ def build_admin_router(
         await state.clear()
         await message.answer(
             f"اتصال پنل `{panel.name}` موفق بود. تعداد inbound: {count}",
-            reply_markup=admin_menu_keyboard(),
+            reply_markup=admin_panels_keyboard(),
         )
 
     @router.message(F.text == ADMIN_BUTTON_CREATE_PROFILE)
@@ -370,7 +417,7 @@ def build_admin_router(
     async def create_profile(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
 
@@ -487,7 +534,7 @@ def build_admin_router(
         await state.clear()
         await message.answer(
             f"پروفایل `{name}` با شناسه {profile_id} ساخته شد.",
-            reply_markup=admin_menu_keyboard(),
+            reply_markup=admin_profiles_keyboard(),
         )
 
     @router.message(F.text == ADMIN_BUTTON_ADD_PROFILE_PORT)
@@ -509,7 +556,7 @@ def build_admin_router(
     async def add_profile_port(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
 
@@ -593,7 +640,7 @@ def build_admin_router(
         await state.clear()
         await message.answer(
             f"پورت {port} با ظرفیت {max_count} به پروفایل `{profile.name}` اضافه شد.",
-            reply_markup=admin_menu_keyboard(),
+            reply_markup=admin_profiles_keyboard(),
         )
 
     @router.message(F.text == ADMIN_BUTTON_EDIT_PORT_CAPACITY)
@@ -615,7 +662,7 @@ def build_admin_router(
     async def edit_port_capacity(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
 
@@ -652,7 +699,7 @@ def build_admin_router(
         await state.clear()
         await message.answer(
             f"ظرفیت پورت {port} در پروفایل `{profile.name}` به {max_count} تغییر کرد.",
-            reply_markup=admin_menu_keyboard(),
+            reply_markup=admin_profiles_keyboard(),
         )
 
     @router.message(F.text == ADMIN_BUTTON_TOGGLE_PROFILE)
@@ -673,7 +720,7 @@ def build_admin_router(
     async def toggle_profile(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
         parts = [p.strip() for p in (message.text or "").split("|")]
@@ -694,7 +741,7 @@ def build_admin_router(
 
         await profile_repo.set_active(profile.id, status_l == "on")
         await state.clear()
-        await message.answer("وضعیت پروفایل تغییر کرد.", reply_markup=admin_menu_keyboard())
+        await message.answer("وضعیت پروفایل تغییر کرد.", reply_markup=admin_profiles_keyboard())
 
     @router.message(F.text == ADMIN_BUTTON_CAPACITY)
     async def ask_capacity(message: Message, state: FSMContext) -> None:
@@ -714,7 +761,7 @@ def build_admin_router(
     async def capacity_report(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
             return
-        if wants_back(message):
+        if wants_back(message) or wants_main_menu(message):
             await back_to_admin_menu(message, state)
             return
         target = (message.text or "").strip()
@@ -741,7 +788,7 @@ def build_admin_router(
                 )
 
         await state.clear()
-        await message.answer("\n".join(lines), reply_markup=admin_menu_keyboard())
+        await message.answer("\n".join(lines), reply_markup=admin_reports_keyboard())
 
     @router.message(F.text == ADMIN_BUTTON_LIST_PANELS)
     async def list_panels(message: Message) -> None:
@@ -843,6 +890,6 @@ def build_admin_router(
             lines.append(
                 f"- {profile.name} ({status}) panel={profile.panel_id} prefix={profile.prefix} gb={profile.traffic_gb} days={profile.expiry_days} ports=[{ports_str}]"
             )
-        await message.answer("\n".join(lines))
+        await message.answer("\n".join(lines), reply_markup=admin_profiles_keyboard())
 
     return router

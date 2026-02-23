@@ -50,8 +50,13 @@ In Telegram (as admin):
 - `/admin`
 - `/start` (for admin) also opens admin menu directly.
 
-Then use menu buttons.
-- In every admin input step, `بازگشت` is available to cancel and return to main admin menu.
+Then use categorized menu panels:
+- `مشتری‌ها`
+- `پروفایل‌ها`
+- `پنل‌ها`
+- `گزارش‌ها`
+- In every admin input step, `بازگشت` is available to cancel.
+- `منوی اصلی` is available in submenus to return to the top admin panel.
 
 ### Input formats
 - Add customer:

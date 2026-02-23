@@ -9,6 +9,7 @@ from src.bot.keyboards import (
     ADMIN_BUTTON_ADD_PANEL,
     ADMIN_BUTTON_ADD_USER,
     ADMIN_BUTTON_ASSIGN_USER_PROFILES,
+    ADMIN_BUTTON_BACK,
     ADMIN_BUTTON_CAPACITY,
     ADMIN_BUTTON_CREATE_PROFILE,
     ADMIN_BUTTON_LIST_PANELS,
@@ -17,6 +18,7 @@ from src.bot.keyboards import (
     ADMIN_BUTTON_REMOVE_USER,
     ADMIN_BUTTON_TEST_PANEL,
     ADMIN_BUTTON_TOGGLE_PROFILE,
+    admin_back_keyboard,
     admin_menu_keyboard,
     panel_delete_confirm_keyboard,
     panel_list_keyboard,
@@ -58,6 +60,13 @@ def build_admin_router(
             return False
         return True
 
+    async def back_to_admin_menu(message: Message, state: FSMContext) -> None:
+        await state.clear()
+        await message.answer("به منوی ادمین برگشتی.", reply_markup=admin_menu_keyboard())
+
+    def wants_back(message: Message) -> bool:
+        return (message.text or "").strip() == ADMIN_BUTTON_BACK
+
     @router.message(Command("admin"))
     async def admin_menu(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
@@ -80,11 +89,19 @@ def build_admin_router(
         if not await guard_admin(message):
             return
         await state.set_state(AdminStates.add_user)
-        await message.answer("فرمت: `chat_id|name`\nمثال: `123456789|علی`")
+        await message.answer(
+            "فرمت: `chat_id|name`\n"
+            "مثال: `123456789|علی`\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
+        )
 
     @router.message(AdminStates.add_user)
     async def add_user(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
             return
         raw = (message.text or "").strip()
         if not raw:
@@ -118,11 +135,18 @@ def build_admin_router(
         if not await guard_admin(message):
             return
         await state.set_state(AdminStates.remove_user)
-        await message.answer("chat_id کاربر برای حذف را بفرست.")
+        await message.answer(
+            "chat_id کاربر برای حذف را بفرست.\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
+        )
 
     @router.message(AdminStates.remove_user)
     async def remove_user(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
             return
         try:
             chat_id = int((message.text or "").strip())
@@ -146,12 +170,17 @@ def build_admin_router(
         await message.answer(
             "فرمت: `chat_id|profile1,profile2`\n"
             "مثال: `123456789|10h,20h`\n"
-            "برای دسترسی به همه پروفایل‌ها: `123456789|all`"
+            "برای دسترسی به همه پروفایل‌ها: `123456789|all`\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
         )
 
     @router.message(AdminStates.assign_user_profiles)
     async def assign_user_profiles(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
             return
         raw = (message.text or "").strip()
         parts = [p.strip() for p in raw.split("|", 1)]
@@ -235,12 +264,17 @@ def build_admin_router(
             "فرمت:\n"
             "`name|base_url|username|password`\n"
             "مثال:\n"
-            "`main|https://1.2.3.4:20753/abc123|admin|tsvpn2000`"
+            "`main|https://1.2.3.4:20753/abc123|admin|tsvpn2000`\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
         )
 
     @router.message(AdminStates.add_panel)
     async def add_panel(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
             return
         parts = [p.strip() for p in (message.text or "").split("|")]
         if len(parts) != 4 or not all(parts):
@@ -261,11 +295,20 @@ def build_admin_router(
         if not await guard_admin(message):
             return
         await state.set_state(AdminStates.test_panel)
-        await message.answer("نام پنل را بفرست.")
+        panels = await panel_repo.list_panels(active_only=False)
+        names = ", ".join(p.name for p in panels) if panels else "-"
+        await message.answer(
+            f"نام پنل را بفرست.\nپنل‌های ثبت‌شده: {names}\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
+        )
 
     @router.message(AdminStates.test_panel)
     async def test_panel(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
             return
         panel_name = (message.text or "").strip()
         panel = await panel_repo.get_by_name(panel_name)
@@ -298,6 +341,8 @@ def build_admin_router(
         if not await guard_admin(message):
             return
         await state.set_state(AdminStates.create_profile)
+        panels = await panel_repo.list_panels(active_only=False)
+        names = ", ".join(p.name for p in panels) if panels else "-"
         await message.answer(
             "فرمت:\n"
             "`name|panel_name|prefix|suffix|gb|days|port:max,port:max`\n"
@@ -305,12 +350,18 @@ def build_admin_router(
             "`name|panel_name|prefix|gb|days|port:max,port:max`\n"
             "مثال:\n"
             "`10h|main|10h||30|10|1044:1000,1025:1000`\n"
-            "اگر suffix نمی‌خوای خالی بگذار (دو || پشت هم)."
+            "اگر suffix نمی‌خوای خالی بگذار (دو || پشت هم).\n"
+            f"پنل‌های ثبت‌شده: {names}\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
         )
 
     @router.message(AdminStates.create_profile)
     async def create_profile(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
             return
 
         raw = (message.text or "").strip()
@@ -434,11 +485,21 @@ def build_admin_router(
         if not await guard_admin(message):
             return
         await state.set_state(AdminStates.toggle_profile)
-        await message.answer("فرمت: `profile_name|on` یا `profile_name|off`")
+        profiles = await profile_repo.list_profiles(active_only=False)
+        names = ", ".join(p.name for p in profiles) if profiles else "-"
+        await message.answer(
+            "فرمت: `profile_name|on` یا `profile_name|off`\n"
+            f"پروفایل‌های ثبت‌شده: {names}\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
+        )
 
     @router.message(AdminStates.toggle_profile)
     async def toggle_profile(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
             return
         parts = [p.strip() for p in (message.text or "").split("|")]
         if len(parts) != 2:
@@ -465,11 +526,21 @@ def build_admin_router(
         if not await guard_admin(message):
             return
         await state.set_state(AdminStates.capacity_report)
-        await message.answer("نام پروفایل را بفرست یا `all`")
+        profiles = await profile_repo.list_profiles(active_only=False)
+        names = ", ".join(p.name for p in profiles) if profiles else "-"
+        await message.answer(
+            "نام پروفایل را بفرست یا `all`\n"
+            f"پروفایل‌های ثبت‌شده: {names}\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
+        )
 
     @router.message(AdminStates.capacity_report)
     async def capacity_report(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
             return
         target = (message.text or "").strip()
 

@@ -15,6 +15,7 @@ ADMIN_BUTTON_TOGGLE_PROFILE = "تغییر وضعیت پروفایل"
 ADMIN_BUTTON_CAPACITY = "گزارش ظرفیت"
 ADMIN_BUTTON_LIST_PANELS = "لیست پنل‌ها"
 ADMIN_BUTTON_LIST_PROFILES = "لیست پروفایل‌ها"
+ADMIN_BUTTON_BACK = "بازگشت"
 USER_BUTTON_BACK = "بازگشت"
 
 ADMIN_BUTTONS = {
@@ -57,6 +58,12 @@ def admin_menu_keyboard() -> ReplyKeyboardMarkup:
         KeyboardButton(text=ADMIN_BUTTON_LIST_PANELS),
         KeyboardButton(text=ADMIN_BUTTON_LIST_PROFILES),
     )
+    return kb.as_markup(resize_keyboard=True)
+
+
+def admin_back_keyboard() -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardBuilder()
+    kb.row(KeyboardButton(text=ADMIN_BUTTON_BACK))
     return kb.as_markup(resize_keyboard=True)
 
 

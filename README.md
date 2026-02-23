@@ -48,6 +48,7 @@ In Telegram (as admin):
 - `/admin`
 
 Then use menu buttons.
+- In every admin input step, `بازگشت` is available to cancel and return to main admin menu.
 
 ### Input formats
 - Add customer:

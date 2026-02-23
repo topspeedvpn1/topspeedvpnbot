@@ -77,6 +77,14 @@ def build_admin_router(
             reply_markup=admin_menu_keyboard(),
         )
 
+    @router.message(Command("start"), F.from_user.id == admin_chat_id)
+    async def admin_start_redirect(message: Message, state: FSMContext) -> None:
+        await state.clear()
+        await message.answer(
+            "شما ادمین هستید. منوی ادمین باز شد.",
+            reply_markup=admin_menu_keyboard(),
+        )
+
     @router.message(Command("cancel"))
     async def cancel_any(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):

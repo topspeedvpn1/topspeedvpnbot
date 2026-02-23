@@ -13,6 +13,7 @@ import qrcode
 
 from src.bot.keyboards import (
     USER_BUTTON_BACK,
+    admin_menu_keyboard,
     quantity_keyboard,
     user_profile_keyboard,
     user_quantity_keyboard,
@@ -164,6 +165,13 @@ def build_user_router(
     @router.message(Command("start"))
     async def start(message: Message, state: FSMContext) -> None:
         chat_id = message.from_user.id
+        if chat_id == admin_chat_id:
+            await state.clear()
+            await message.answer(
+                "شما ادمین هستید. برای مدیریت از منوی ادمین استفاده کن.",
+                reply_markup=admin_menu_keyboard(),
+            )
+            return
         if not await is_allowed(chat_id):
             await state.clear()
             await message.answer(
@@ -177,6 +185,13 @@ def build_user_router(
     @router.message(UserStates.choose_profile)
     async def choose_profile_from_keyboard(message: Message, state: FSMContext) -> None:
         chat_id = message.from_user.id
+        if chat_id == admin_chat_id:
+            await state.clear()
+            await message.answer(
+                "این بخش برای مشتری است. منوی ادمین باز شد.",
+                reply_markup=admin_menu_keyboard(),
+            )
+            return
         if not await is_allowed(chat_id):
             await state.clear()
             await message.answer("دسترسی ندارید.")
@@ -204,6 +219,13 @@ def build_user_router(
     @router.message(UserStates.choose_quantity)
     async def choose_quantity_from_keyboard(message: Message, state: FSMContext) -> None:
         chat_id = message.from_user.id
+        if chat_id == admin_chat_id:
+            await state.clear()
+            await message.answer(
+                "این بخش برای مشتری است. منوی ادمین باز شد.",
+                reply_markup=admin_menu_keyboard(),
+            )
+            return
         if not await is_allowed(chat_id):
             await state.clear()
             await message.answer("دسترسی ندارید.")
@@ -233,6 +255,14 @@ def build_user_router(
     @router.callback_query(F.data.startswith("profile:"))
     async def choose_profile(callback: CallbackQuery, state: FSMContext) -> None:
         chat_id = callback.from_user.id
+        if chat_id == admin_chat_id:
+            await state.clear()
+            await callback.message.answer(
+                "این بخش برای مشتری است. منوی ادمین باز شد.",
+                reply_markup=admin_menu_keyboard(),
+            )
+            await callback.answer("ادمین: از /admin استفاده کن", show_alert=True)
+            return
         if not await is_allowed(chat_id):
             await callback.answer("دسترسی ندارید", show_alert=True)
             return
@@ -258,8 +288,16 @@ def build_user_router(
         await callback.answer()
 
     @router.callback_query(F.data.startswith("qty:"))
-    async def choose_quantity(callback: CallbackQuery) -> None:
+    async def choose_quantity(callback: CallbackQuery, state: FSMContext) -> None:
         chat_id = callback.from_user.id
+        if chat_id == admin_chat_id:
+            await state.clear()
+            await callback.message.answer(
+                "این بخش برای مشتری است. منوی ادمین باز شد.",
+                reply_markup=admin_menu_keyboard(),
+            )
+            await callback.answer("ادمین: از /admin استفاده کن", show_alert=True)
+            return
         if not await is_allowed(chat_id):
             await callback.answer("دسترسی ندارید", show_alert=True)
             return

@@ -46,6 +46,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/topspeedvpn1/topspeedvpnbot/ma
 ## Admin usage
 In Telegram (as admin):
 - `/admin`
+- `/start` (for admin) also opens admin menu directly.
 
 Then use menu buttons.
 - In every admin input step, `بازگشت` is available to cancel and return to main admin menu.

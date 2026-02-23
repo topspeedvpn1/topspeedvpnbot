@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import re
 from urllib.parse import quote, unquote
 
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
+import qrcode
 
 from src.bot.keyboards import (
     USER_BUTTON_BACK,
@@ -31,6 +33,15 @@ def build_user_router(
     allocator: AllocatorService,
 ) -> Router:
     router = Router(name="user")
+
+    def build_qr_png(content: str) -> bytes:
+        qr = qrcode.QRCode(box_size=10, border=2)
+        qr.add_data(content)
+        qr.make(fit=True)
+        image = qr.make_image(fill_color="black", back_color="white")
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
 
     def normalize_link_and_extract_number(link: str, default_index: int) -> tuple[str, str]:
         text = (link or "").strip()
@@ -138,10 +149,17 @@ def build_user_router(
         )
         for idx, link in enumerate(result.links, start=1):
             normalized_link, number = normalize_link_and_extract_number(link, idx)
+            try:
+                qr_png = build_qr_png(normalized_link)
+                qr_file = BufferedInputFile(qr_png, filename=f"config_{number}.png")
+                await message.answer_photo(qr_file)
+            except Exception:
+                # QR generation failure should not block sending config itself.
+                pass
             await message.answer(normalized_link)
             await message.answer(number)
             # Small delay to reduce Telegram flood limits on large batches.
-            await asyncio.sleep(0.08)
+            await asyncio.sleep(0.15)
 
     @router.message(Command("start"))
     async def start(message: Message, state: FSMContext) -> None:

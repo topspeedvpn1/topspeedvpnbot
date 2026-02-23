@@ -13,7 +13,7 @@ Telegram bot for multi-panel 3x-ui config generation with admin-managed profiles
   - `/start`
   - choose model
   - choose quantity (`10`, `50`, `100`)
-  - receive direct links in multiple messages
+  - for each config: QR image + direct link + config number
 - Per-profile unique naming without leading zeros (`10h1`, `10h2`, ...).
 - Automatic port rotation when a port reaches configured capacity.
 - SQLite persistence with encrypted panel passwords (`APP_SECRET`).

@@ -7,11 +7,13 @@ from aiogram.types import CallbackQuery, Message
 
 from src.bot.keyboards import (
     ADMIN_BUTTON_ADD_PANEL,
+    ADMIN_BUTTON_ADD_PROFILE_PORT,
     ADMIN_BUTTON_ADD_USER,
     ADMIN_BUTTON_ASSIGN_USER_PROFILES,
     ADMIN_BUTTON_BACK,
     ADMIN_BUTTON_CAPACITY,
     ADMIN_BUTTON_CREATE_PROFILE,
+    ADMIN_BUTTON_EDIT_PORT_CAPACITY,
     ADMIN_BUTTON_LIST_PANELS,
     ADMIN_BUTTON_LIST_PROFILES,
     ADMIN_BUTTON_LIST_USERS,
@@ -488,6 +490,171 @@ def build_admin_router(
             reply_markup=admin_menu_keyboard(),
         )
 
+    @router.message(F.text == ADMIN_BUTTON_ADD_PROFILE_PORT)
+    async def ask_add_profile_port(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.add_profile_port)
+        profiles = await profile_repo.list_profiles(active_only=False)
+        names = ", ".join(p.name for p in profiles) if profiles else "-"
+        await message.answer(
+            "فرمت: `profile_name|port:max`\n"
+            "مثال: `10h|51045:100`\n"
+            f"پروفایل‌های ثبت‌شده: {names}\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
+        )
+
+    @router.message(AdminStates.add_profile_port)
+    async def add_profile_port(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
+            return
+
+        parts = [p.strip() for p in (message.text or "").split("|")]
+        if len(parts) != 2:
+            await message.answer("فرمت اشتباه است. مثال: `10h|51045:100`")
+            return
+
+        profile_name, port_spec = parts
+        if ":" not in port_spec:
+            await message.answer("فرمت پورت اشتباه است. مثال: `51045:100`")
+            return
+        port_raw, max_raw = [x.strip() for x in port_spec.split(":", 1)]
+        try:
+            port = int(port_raw)
+            max_count = int(max_raw)
+        except ValueError:
+            await message.answer("port و max باید عدد باشند.")
+            return
+        if max_count <= 0:
+            await message.answer("max باید بیشتر از صفر باشد.")
+            return
+
+        profile = await profile_repo.get_by_name(profile_name)
+        if profile is None:
+            await message.answer("پروفایل پیدا نشد.")
+            return
+
+        existing_ports = await profile_repo.list_ports(profile.id)
+        if any(p.port == port for p in existing_ports):
+            await message.answer(f"پورت {port} از قبل برای این پروفایل ثبت شده.")
+            return
+
+        panel = await panel_repo.get_by_id(profile.panel_id)
+        if panel is None:
+            await message.answer("پنل متصل به پروفایل پیدا نشد.")
+            return
+
+        try:
+            password = crypto.decrypt(panel.password_enc)
+            async with XUIClient(
+                base_url=panel.base_url,
+                username=panel.username,
+                password=password,
+                verify_tls=xui_verify_tls,
+                timeout_seconds=request_timeout,
+            ) as xui:
+                inbounds = await xui.list_inbounds()
+        except XUIError as exc:
+            await message.answer(f"خطا در اتصال پنل: {exc}")
+            return
+
+        matches = []
+        for inbound in inbounds:
+            try:
+                inbound_port = int(inbound.get("port"))
+            except (TypeError, ValueError):
+                continue
+            if inbound_port == port:
+                matches.append(inbound)
+
+        if not matches:
+            await message.answer(f"پورت {port} روی پنل `{panel.name}` پیدا نشد.")
+            return
+        if len(matches) > 1:
+            await message.answer(f"برای پورت {port} چند inbound وجود دارد؛ نامعتبر است.")
+            return
+
+        inbound_id = int(matches[0]["id"])
+        try:
+            await profile_repo.add_port(
+                profile_id=profile.id,
+                inbound_id=inbound_id,
+                port=port,
+                max_active_clients=max_count,
+            )
+        except Exception as exc:
+            await message.answer(f"افزودن پورت ناموفق: {exc}")
+            return
+
+        await state.clear()
+        await message.answer(
+            f"پورت {port} با ظرفیت {max_count} به پروفایل `{profile.name}` اضافه شد.",
+            reply_markup=admin_menu_keyboard(),
+        )
+
+    @router.message(F.text == ADMIN_BUTTON_EDIT_PORT_CAPACITY)
+    async def ask_edit_port_capacity(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        await state.set_state(AdminStates.update_profile_port_capacity)
+        profiles = await profile_repo.list_profiles(active_only=False)
+        names = ", ".join(p.name for p in profiles) if profiles else "-"
+        await message.answer(
+            "فرمت: `profile_name|port|max`\n"
+            "مثال: `10h|51045|250`\n"
+            f"پروفایل‌های ثبت‌شده: {names}\n"
+            "برای انصراف دکمه `بازگشت` را بزن.",
+            reply_markup=admin_back_keyboard(),
+        )
+
+    @router.message(AdminStates.update_profile_port_capacity)
+    async def edit_port_capacity(message: Message, state: FSMContext) -> None:
+        if not await guard_admin(message):
+            return
+        if wants_back(message):
+            await back_to_admin_menu(message, state)
+            return
+
+        parts = [p.strip() for p in (message.text or "").split("|")]
+        if len(parts) != 3:
+            await message.answer("فرمت اشتباه است. مثال: `10h|51045|250`")
+            return
+
+        profile_name, port_raw, max_raw = parts
+        try:
+            port = int(port_raw)
+            max_count = int(max_raw)
+        except ValueError:
+            await message.answer("port و max باید عدد باشند.")
+            return
+        if max_count <= 0:
+            await message.answer("max باید بیشتر از صفر باشد.")
+            return
+
+        profile = await profile_repo.get_by_name(profile_name)
+        if profile is None:
+            await message.answer("پروفایل پیدا نشد.")
+            return
+
+        updated = await profile_repo.update_port_capacity(
+            profile_id=profile.id,
+            port=port,
+            max_active_clients=max_count,
+        )
+        if not updated:
+            await message.answer(f"پورت {port} برای پروفایل `{profile.name}` ثبت نشده است.")
+            return
+
+        await state.clear()
+        await message.answer(
+            f"ظرفیت پورت {port} در پروفایل `{profile.name}` به {max_count} تغییر کرد.",
+            reply_markup=admin_menu_keyboard(),
+        )
+
     @router.message(F.text == ADMIN_BUTTON_TOGGLE_PROFILE)
     async def ask_toggle_profile(message: Message, state: FSMContext) -> None:
         if not await guard_admin(message):
@@ -584,12 +751,30 @@ def build_admin_router(
         if not panels:
             await message.answer("هیچ پنلی ثبت نشده.")
             return
+
+        profiles = await profile_repo.list_profiles(active_only=False)
+        profiles_by_panel: dict[int, list] = {}
+        for profile in profiles:
+            profiles_by_panel.setdefault(profile.panel_id, []).append(profile)
+
         lines = ["پنل‌ها:"]
         panel_buttons: list[tuple[int, str]] = []
         for panel in panels:
             status = "on" if panel.active else "off"
             lines.append(f"- {panel.name} ({status}) -> {panel.base_url}")
+            panel_profiles = profiles_by_panel.get(panel.id, [])
+            if not panel_profiles:
+                lines.append("  پروفایل: -")
+            for profile in panel_profiles:
+                profile_status = "on" if profile.active else "off"
+                ports = await profile_repo.list_ports(profile.id)
+                ports_str = ", ".join(f"{p.port}:{p.max_active_clients}" for p in ports) if ports else "-"
+                lines.append(f"  پروفایل {profile.name} ({profile_status}) | ports=[{ports_str}]")
             panel_buttons.append((panel.id, panel.name))
+
+        lines.append("")
+        lines.append("برای افزودن پورت: «افزودن پورت پروفایل»")
+        lines.append("برای تغییر ظرفیت: «ویرایش ظرفیت پورت»")
         await message.answer("\n".join(lines), reply_markup=panel_list_keyboard(panel_buttons))
 
     @router.callback_query(F.data.startswith("admin_panel_delete:"))

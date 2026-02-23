@@ -8,6 +8,8 @@ class AdminStates(StatesGroup):
     add_panel = State()
     test_panel = State()
     create_profile = State()
+    add_profile_port = State()
+    update_profile_port_capacity = State()
     toggle_profile = State()
     capacity_report = State()
 

@@ -85,6 +85,48 @@ class ProfileRepository:
             for r in rows
         ]
 
+    async def add_port(
+        self,
+        *,
+        profile_id: int,
+        inbound_id: int,
+        port: int,
+        max_active_clients: int,
+    ) -> None:
+        async with self.db.transaction() as conn:
+            cur = await conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_sort FROM profile_ports WHERE profile_id = ?",
+                (profile_id,),
+            )
+            row = await cur.fetchone()
+            next_sort = int(row["next_sort"]) if row is not None else 0
+            await conn.execute(
+                """
+                INSERT INTO profile_ports(profile_id, inbound_id, port, max_active_clients, sort_order)
+                VALUES(?, ?, ?, ?, ?)
+                """,
+                (profile_id, inbound_id, port, max_active_clients, next_sort),
+            )
+
+    async def update_port_capacity(
+        self,
+        *,
+        profile_id: int,
+        port: int,
+        max_active_clients: int,
+    ) -> bool:
+        existing = await self.db.fetchone(
+            "SELECT id FROM profile_ports WHERE profile_id = ? AND port = ?",
+            (profile_id, port),
+        )
+        if existing is None:
+            return False
+        await self.db.execute(
+            "UPDATE profile_ports SET max_active_clients = ? WHERE profile_id = ? AND port = ?",
+            (max_active_clients, profile_id, port),
+        )
+        return True
+
     async def set_rr_index(self, profile_id: int, rr_index: int) -> None:
         await self.db.execute("UPDATE profiles SET rr_index = ? WHERE id = ?", (rr_index, profile_id))
 

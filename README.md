@@ -9,6 +9,8 @@ Telegram bot for multi-panel 3x-ui config generation with admin-managed profiles
   - customers (allowlist)
   - panels
   - profiles (prefix/suffix, traffic, days, ports, per-port capacity)
+  - add new port to an existing profile
+  - edit capacity for an existing profile port
 - User flow:
   - `/start`
   - choose model
@@ -65,6 +67,14 @@ Then use menu buttons.
   - `name|panel_name|prefix|gb|days|port:max,port:max` (when suffix is empty)
   - Example: `10h|main|10h||30|10|1044:1000,1025:1000`
   - Note: duplicate ports are rejected.
+
+- Add profile port:
+  - `profile_name|port:max`
+  - Example: `10h|51045:100`
+
+- Edit profile port capacity:
+  - `profile_name|port|max`
+  - Example: `10h|51045|250`
 
 - Toggle profile:
   - `profile_name|on`

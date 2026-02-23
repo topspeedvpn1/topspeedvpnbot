@@ -11,6 +11,8 @@ ADMIN_BUTTON_LIST_USERS = "لیست مشتری‌ها"
 ADMIN_BUTTON_ADD_PANEL = "افزودن پنل"
 ADMIN_BUTTON_TEST_PANEL = "تست پنل"
 ADMIN_BUTTON_CREATE_PROFILE = "ساخت پروفایل"
+ADMIN_BUTTON_ADD_PROFILE_PORT = "افزودن پورت پروفایل"
+ADMIN_BUTTON_EDIT_PORT_CAPACITY = "ویرایش ظرفیت پورت"
 ADMIN_BUTTON_TOGGLE_PROFILE = "تغییر وضعیت پروفایل"
 ADMIN_BUTTON_CAPACITY = "گزارش ظرفیت"
 ADMIN_BUTTON_LIST_PANELS = "لیست پنل‌ها"
@@ -26,6 +28,8 @@ ADMIN_BUTTONS = {
     ADMIN_BUTTON_ADD_PANEL,
     ADMIN_BUTTON_TEST_PANEL,
     ADMIN_BUTTON_CREATE_PROFILE,
+    ADMIN_BUTTON_ADD_PROFILE_PORT,
+    ADMIN_BUTTON_EDIT_PORT_CAPACITY,
     ADMIN_BUTTON_TOGGLE_PROFILE,
     ADMIN_BUTTON_CAPACITY,
     ADMIN_BUTTON_LIST_PANELS,
@@ -49,6 +53,10 @@ def admin_menu_keyboard() -> ReplyKeyboardMarkup:
     )
     kb.row(
         KeyboardButton(text=ADMIN_BUTTON_CREATE_PROFILE),
+        KeyboardButton(text=ADMIN_BUTTON_ADD_PROFILE_PORT),
+    )
+    kb.row(
+        KeyboardButton(text=ADMIN_BUTTON_EDIT_PORT_CAPACITY),
         KeyboardButton(text=ADMIN_BUTTON_TOGGLE_PROFILE),
     )
     kb.row(

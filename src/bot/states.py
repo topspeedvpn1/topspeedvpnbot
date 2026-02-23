@@ -10,3 +10,8 @@ class AdminStates(StatesGroup):
     create_profile = State()
     toggle_profile = State()
     capacity_report = State()
+
+
+class UserStates(StatesGroup):
+    choose_profile = State()
+    choose_quantity = State()

@@ -15,6 +15,7 @@ ADMIN_BUTTON_TOGGLE_PROFILE = "تغییر وضعیت پروفایل"
 ADMIN_BUTTON_CAPACITY = "گزارش ظرفیت"
 ADMIN_BUTTON_LIST_PANELS = "لیست پنل‌ها"
 ADMIN_BUTTON_LIST_PROFILES = "لیست پروفایل‌ها"
+USER_BUTTON_BACK = "بازگشت"
 
 ADMIN_BUTTONS = {
     ADMIN_BUTTON_ADD_USER,
@@ -73,6 +74,24 @@ def quantity_keyboard(profile_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text=str(qty), callback_data=f"qty:{profile_id}:{qty}")
         )
     return builder.as_markup()
+
+
+def user_profile_keyboard(profile_names: list[str]) -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardBuilder()
+    for name in profile_names:
+        kb.row(KeyboardButton(text=name))
+    return kb.as_markup(resize_keyboard=True)
+
+
+def user_quantity_keyboard() -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardBuilder()
+    kb.row(
+        KeyboardButton(text="10"),
+        KeyboardButton(text="50"),
+        KeyboardButton(text="100"),
+    )
+    kb.row(KeyboardButton(text=USER_BUTTON_BACK))
+    return kb.as_markup(resize_keyboard=True)
 
 
 def panel_list_keyboard(panels: list[tuple[int, str]]) -> InlineKeyboardMarkup:

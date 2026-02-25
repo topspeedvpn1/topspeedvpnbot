@@ -14,6 +14,7 @@ class XUIError(Exception):
 
 @dataclass(slots=True)
 class XUISettings:
+    sub_enable: bool
     sub_uri: str
     sub_path: str
     sub_port: int
@@ -77,6 +78,7 @@ class XUIClient:
         obj = msg.get("obj")
         if not isinstance(obj, dict):
             raise XUIError("Invalid panel settings response")
+        sub_enable = bool(obj.get("subEnable"))
         sub_uri = str(obj.get("subURI") or "").strip()
         sub_path = str(obj.get("subPath") or "/sub/").strip() or "/sub/"
         sub_port_raw = obj.get("subPort")
@@ -84,10 +86,19 @@ class XUIClient:
             sub_port = int(sub_port_raw)
         except (TypeError, ValueError):
             sub_port = 0
-        return XUISettings(sub_uri=sub_uri, sub_path=sub_path, sub_port=sub_port)
+        return XUISettings(
+            sub_enable=sub_enable,
+            sub_uri=sub_uri,
+            sub_path=sub_path,
+            sub_port=sub_port,
+        )
 
     async def fetch_subscription(self, sub_id: str) -> str:
         settings = await self.get_settings()
+        if not settings.sub_enable:
+            raise XUIError(
+                "Subscription is disabled on panel (subEnable=false). Enable it in 3x-ui settings."
+            )
         urls = self._subscription_candidate_urls(settings, sub_id)
         errors: list[str] = []
 

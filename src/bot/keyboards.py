@@ -172,3 +172,30 @@ def panel_delete_confirm_keyboard(panel_id: int) -> InlineKeyboardMarkup:
         ),
     )
     return builder.as_markup()
+
+
+def profile_list_keyboard(profiles: list[tuple[int, str]]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for profile_id, profile_name in profiles:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🗑 حذف {profile_name}",
+                callback_data=f"admin_profile_delete:{profile_id}",
+            )
+        )
+    return builder.as_markup()
+
+
+def profile_delete_confirm_keyboard(profile_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ تایید حذف",
+            callback_data=f"admin_profile_confirm_delete:{profile_id}",
+        ),
+        InlineKeyboardButton(
+            text="❌ انصراف",
+            callback_data="admin_profile_delete_cancel",
+        ),
+    )
+    return builder.as_markup()

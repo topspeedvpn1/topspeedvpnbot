@@ -31,6 +31,8 @@ from src.bot.keyboards import (
     admin_profiles_keyboard,
     admin_reports_keyboard,
     admin_users_keyboard,
+    profile_delete_confirm_keyboard,
+    profile_list_keyboard,
     panel_delete_confirm_keyboard,
     panel_list_keyboard,
 )
@@ -908,6 +910,7 @@ def build_admin_router(
             await message.answer("هیچ پروفایلی ثبت نشده.")
             return
         lines = ["پروفایل‌ها:"]
+        profile_buttons: list[tuple[int, str]] = []
         for profile in profiles:
             status = "on" if profile.active else "off"
             ports = await profile_repo.list_ports(profile.id)
@@ -915,6 +918,57 @@ def build_admin_router(
             lines.append(
                 f"- {profile.name} ({status}) panel={profile.panel_id} prefix={profile.prefix} gb={profile.traffic_gb} days={profile.expiry_days} ports=[{ports_str}]"
             )
-        await message.answer("\n".join(lines), reply_markup=admin_profiles_keyboard())
+            profile_buttons.append((profile.id, profile.name))
+        await message.answer("\n".join(lines), reply_markup=profile_list_keyboard(profile_buttons))
+
+    @router.callback_query(F.data.startswith("admin_profile_delete:"))
+    async def ask_delete_profile(callback: CallbackQuery) -> None:
+        if not await guard_admin_callback(callback):
+            return
+        _, profile_id_raw = callback.data.split(":", 1)
+        try:
+            profile_id = int(profile_id_raw)
+        except ValueError:
+            await callback.answer("شناسه پروفایل نامعتبر است.", show_alert=True)
+            return
+
+        profile = await profile_repo.get_by_id(profile_id)
+        if profile is None:
+            await callback.answer("پروفایل پیدا نشد.", show_alert=True)
+            return
+
+        await callback.message.answer(
+            f"حذف پروفایل `{profile.name}` تایید شود؟\n"
+            "توجه: پورت‌ها، شمارنده نام‌گذاری، دسترسی مشتری‌ها و سابقه کانفیگ این پروفایل هم حذف می‌شود.",
+            reply_markup=profile_delete_confirm_keyboard(profile.id),
+        )
+        await callback.answer()
+
+    @router.callback_query(F.data.startswith("admin_profile_confirm_delete:"))
+    async def confirm_delete_profile(callback: CallbackQuery) -> None:
+        if not await guard_admin_callback(callback):
+            return
+        _, profile_id_raw = callback.data.split(":", 1)
+        try:
+            profile_id = int(profile_id_raw)
+        except ValueError:
+            await callback.answer("شناسه پروفایل نامعتبر است.", show_alert=True)
+            return
+
+        profile = await profile_repo.get_by_id(profile_id)
+        if profile is None:
+            await callback.answer("پروفایل قبلا حذف شده یا وجود ندارد.", show_alert=True)
+            return
+
+        await profile_repo.delete(profile_id)
+        await callback.message.edit_text(f"پروفایل `{profile.name}` حذف شد.")
+        await callback.answer("حذف شد")
+
+    @router.callback_query(F.data == "admin_profile_delete_cancel")
+    async def cancel_delete_profile(callback: CallbackQuery) -> None:
+        if not await guard_admin_callback(callback):
+            return
+        await callback.message.edit_text("حذف پروفایل لغو شد.")
+        await callback.answer("لغو شد")
 
     return router

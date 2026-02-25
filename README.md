@@ -11,6 +11,7 @@ Telegram bot for multi-panel 3x-ui config generation with admin-managed profiles
   - profiles (prefix/suffix, traffic, days, ports, per-port capacity)
   - add new port to an existing profile
   - edit capacity for an existing profile port
+  - delete panels and profiles from list views with confirmation
 - User flow:
   - `/start`
   - choose model

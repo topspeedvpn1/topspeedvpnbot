@@ -132,6 +132,9 @@ class ProfileRepository:
     async def set_rr_index(self, profile_id: int, rr_index: int) -> None:
         await self.db.execute("UPDATE profiles SET rr_index = ? WHERE id = ?", (rr_index, profile_id))
 
+    async def delete(self, profile_id: int) -> None:
+        await self.db.execute("DELETE FROM profiles WHERE id = ?", (profile_id,))
+
     @staticmethod
     def _row_to_profile(row) -> Profile | None:
         if row is None:

@@ -112,4 +112,4 @@ Important:
 ## Notes
 - Bot does not create inbounds; it only adds clients to existing inbounds.
 - Direct links are extracted from panel subscription output (`subId`).
-- Ensure panel subscription endpoint is reachable (`subPort`/`subURI`), otherwise link delivery will fail.
+- If subscription is disabled/unreachable, bot falls back to building direct links from inbound settings (common protocols).

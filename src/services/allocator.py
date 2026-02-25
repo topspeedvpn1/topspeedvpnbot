@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import secrets
 import string
 import time
@@ -8,13 +10,14 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import quote, urlencode, urlparse
 
 from src.db import Database
 from src.models import AllocationResult
 from src.repositories.panels import PanelRepository
 from src.repositories.profiles import ProfileRepository
 from src.services.crypto import CryptoService
-from src.services.link_resolver import LinkResolverService
+from src.services.link_resolver import LinkResolverError, LinkResolverService
 from src.services.xui_client import XUIClient, XUIError
 
 
@@ -29,6 +32,14 @@ class _PortRuntime:
     max_active_clients: int
     active_clients: int
     protocol: str
+
+
+@dataclass(slots=True)
+class _StagedClient:
+    inbound_id: int
+    config_name: str
+    sub_id: str
+    client: dict[str, Any]
 
 
 class AllocatorService:
@@ -163,8 +174,7 @@ class AllocatorService:
                     raise AllocationError("Counter row missing")
 
                 last_number = int(row["last_number"])
-                staged_clients: list[dict[str, Any]] = []
-                staged_records: list[tuple[int, str, str]] = []
+                staged_allocations: list[_StagedClient] = []
                 assigned_by_inbound: dict[int, list[dict[str, Any]]] = defaultdict(list)
                 local_used = [0 for _ in port_runtimes]
                 names_in_request: set[str] = set()
@@ -193,29 +203,59 @@ class AllocatorService:
                         expiry_days=profile.expiry_days,
                     )
 
-                    staged_clients.append(client)
                     assigned_by_inbound[runtime_port.inbound_id].append(client)
-                    staged_records.append((runtime_port.inbound_id, config_name, str(client["subId"])))
+                    staged_allocations.append(
+                        _StagedClient(
+                            inbound_id=runtime_port.inbound_id,
+                            config_name=config_name,
+                            sub_id=str(client["subId"]),
+                            client=client,
+                        )
+                    )
 
                 for inbound_id, clients in assigned_by_inbound.items():
                     await xui.add_clients(inbound_id, clients)
 
                 all_links: list[str] = []
-                for client in staged_clients:
-                    sub_id = str(client["subId"])
-                    raw_text = await xui.fetch_subscription(sub_id)
-                    links = LinkResolverService.extract_links(raw_text)
+                inbound_by_id = {int(i.get("id")): i for i in inbounds if i.get("id") is not None}
+                settings = await xui.get_settings()
+
+                for alloc in staged_allocations:
+                    links: list[str] = []
+                    if settings.sub_enable:
+                        try:
+                            raw_text = await xui.fetch_subscription(alloc.sub_id)
+                            links = LinkResolverService.extract_links(raw_text)
+                        except (XUIError, LinkResolverError):
+                            links = []
+
+                    if not links:
+                        inbound = inbound_by_id.get(alloc.inbound_id)
+                        fallback = self._build_direct_link_fallback(
+                            inbound=inbound,
+                            client=alloc.client,
+                            config_name=alloc.config_name,
+                            base_url=panel.base_url,
+                        )
+                        if fallback is not None:
+                            links = [fallback]
+
+                    if not links:
+                        raise AllocationError(
+                            f"Failed to build direct link for config `{alloc.config_name}`"
+                        )
+
                     all_links.extend(links)
 
                 now = int(time.time())
-                for inbound_id, config_name, sub_id in staged_records:
+                for alloc in staged_allocations:
                     await conn.execute(
                         """
                         INSERT INTO issued_configs(
                             profile_id, panel_id, inbound_id, chat_id, config_name, sub_id, created_at
                         ) VALUES(?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (profile.id, panel.id, inbound_id, chat_id, config_name, sub_id, now),
+                        (profile.id, panel.id, alloc.inbound_id, chat_id, alloc.config_name, alloc.sub_id, now),
                     )
 
                 await conn.execute(
@@ -356,3 +396,211 @@ class AllocatorService:
             raise AllocationError(f"Unsupported inbound protocol for auto client creation: {protocol}")
 
         return payload
+
+    @staticmethod
+    def _parse_json_obj(value: Any) -> dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except Exception:
+                return {}
+            if isinstance(parsed, dict):
+                return parsed
+        return {}
+
+    @staticmethod
+    def _extract_host_port(base_url: str, inbound: dict[str, Any], stream: dict[str, Any]) -> tuple[str, int]:
+        parsed = urlparse(base_url)
+        host = parsed.hostname or ""
+        try:
+            port = int(inbound.get("port"))
+        except (TypeError, ValueError):
+            port = 0
+
+        external_proxy = stream.get("externalProxy")
+        if isinstance(external_proxy, list) and external_proxy:
+            first = external_proxy[0]
+            if isinstance(first, dict):
+                ext_host = str(first.get("dest") or "").strip()
+                if ext_host:
+                    host = ext_host
+                try:
+                    ext_port = int(first.get("port"))
+                except (TypeError, ValueError):
+                    ext_port = 0
+                if ext_port > 0:
+                    port = ext_port
+
+        if port <= 0 and parsed.port:
+            port = int(parsed.port)
+        return host, port
+
+    @staticmethod
+    def _first_str(value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    return item.strip()
+        return ""
+
+    @classmethod
+    def _apply_stream_query(cls, params: dict[str, str], stream: dict[str, Any], network: str) -> None:
+        net = network.lower()
+        if net == "tcp":
+            tcp = cls._parse_json_obj(stream.get("tcpSettings"))
+            header = cls._parse_json_obj(tcp.get("header"))
+            header_type = str(header.get("type") or "none")
+            params["headerType"] = header_type
+            if header_type == "http":
+                request = cls._parse_json_obj(header.get("request"))
+                path = cls._first_str(request.get("path"))
+                if path:
+                    params["path"] = path
+                headers = cls._parse_json_obj(request.get("headers"))
+                host = cls._first_str(headers.get("Host"))
+                if host:
+                    params["host"] = host
+        elif net == "ws":
+            ws = cls._parse_json_obj(stream.get("wsSettings"))
+            path = str(ws.get("path") or "")
+            if path:
+                params["path"] = path
+            headers = cls._parse_json_obj(ws.get("headers"))
+            host = cls._first_str(headers.get("Host"))
+            if host:
+                params["host"] = host
+        elif net == "grpc":
+            grpc = cls._parse_json_obj(stream.get("grpcSettings"))
+            service = str(grpc.get("serviceName") or "")
+            if service:
+                params["serviceName"] = service
+
+    @classmethod
+    def _apply_security_query(cls, params: dict[str, str], stream: dict[str, Any], security: str) -> None:
+        sec = security.lower()
+        if sec == "tls":
+            tls = cls._parse_json_obj(stream.get("tlsSettings"))
+            sni = str(tls.get("serverName") or "")
+            if sni:
+                params["sni"] = sni
+            alpn = tls.get("alpn")
+            if isinstance(alpn, list) and alpn:
+                params["alpn"] = ",".join(str(x) for x in alpn if str(x))
+            fp = str(tls.get("fingerprint") or "")
+            if fp:
+                params["fp"] = fp
+        elif sec == "reality":
+            reality = cls._parse_json_obj(stream.get("realitySettings"))
+            names = reality.get("serverNames")
+            if isinstance(names, list) and names:
+                sni = cls._first_str(names)
+                if sni:
+                    params["sni"] = sni
+            public_key = str(reality.get("publicKey") or "")
+            if public_key:
+                params["pbk"] = public_key
+            short_ids = reality.get("shortIds")
+            if isinstance(short_ids, list) and short_ids:
+                sid = cls._first_str(short_ids)
+                if sid:
+                    params["sid"] = sid
+            spider = str(reality.get("spiderX") or "")
+            if spider:
+                params["spx"] = spider
+            fp = str(reality.get("fingerprint") or "")
+            if fp:
+                params["fp"] = fp
+
+    @classmethod
+    def _build_direct_link_fallback(
+        cls,
+        *,
+        inbound: dict[str, Any] | None,
+        client: dict[str, Any],
+        config_name: str,
+        base_url: str,
+    ) -> str | None:
+        if not inbound:
+            return None
+
+        protocol = str(inbound.get("protocol") or "").lower()
+        stream = cls._parse_json_obj(inbound.get("streamSettings"))
+        settings = cls._parse_json_obj(inbound.get("settings"))
+        network = str(stream.get("network") or "tcp")
+        security = str(stream.get("security") or "none")
+        host, port = cls._extract_host_port(base_url, inbound, stream)
+        if not host or port <= 0:
+            return None
+
+        fragment = quote(config_name, safe="-._~")
+
+        if protocol == "vless":
+            client_id = str(client.get("id") or "")
+            if not client_id:
+                return None
+            params: dict[str, str] = {
+                "type": network,
+                "security": security,
+                "encryption": "none",
+            }
+            flow = str(client.get("flow") or "")
+            if flow:
+                params["flow"] = flow
+            cls._apply_stream_query(params, stream, network)
+            cls._apply_security_query(params, stream, security)
+            return f"vless://{client_id}@{host}:{port}?{urlencode(params)}#{fragment}"
+
+        if protocol == "trojan":
+            password = str(client.get("password") or "")
+            if not password:
+                return None
+            params = {"type": network, "security": security}
+            cls._apply_stream_query(params, stream, network)
+            cls._apply_security_query(params, stream, security)
+            return f"trojan://{password}@{host}:{port}?{urlencode(params)}#{fragment}"
+
+        if protocol == "shadowsocks":
+            password = str(client.get("password") or "")
+            method = str(settings.get("method") or "aes-128-gcm")
+            if not password:
+                return None
+            raw = f"{method}:{password}".encode()
+            userinfo = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+            return f"ss://{userinfo}@{host}:{port}#{fragment}"
+
+        if protocol == "vmess":
+            client_id = str(client.get("id") or "")
+            if not client_id:
+                return None
+            vmess: dict[str, str] = {
+                "v": "2",
+                "ps": config_name,
+                "add": host,
+                "port": str(port),
+                "id": client_id,
+                "aid": "0",
+                "scy": str(client.get("security") or "auto"),
+                "net": network,
+                "type": "none",
+                "host": "",
+                "path": "",
+                "tls": "tls" if security in {"tls", "reality"} else "",
+                "sni": "",
+            }
+            params: dict[str, str] = {}
+            cls._apply_stream_query(params, stream, network)
+            cls._apply_security_query(params, stream, security)
+            vmess["type"] = params.get("headerType", "none")
+            vmess["host"] = params.get("host", "")
+            vmess["path"] = params.get("path", params.get("serviceName", ""))
+            vmess["sni"] = params.get("sni", "")
+            token = base64.b64encode(
+                json.dumps(vmess, ensure_ascii=False, separators=(",", ":")).encode()
+            ).decode()
+            return f"vmess://{token}"
+
+        return None

@@ -68,9 +68,11 @@ Then use categorized menu panels:
   - Example: `main|https://1.2.3.4:20753/abc123|admin|tsvpn2000`
 
 - Create profile:
-  - `name|panel_name|prefix|suffix|gb|days|port:max,port:max`
-  - `name|panel_name|prefix|gb|days|port:max,port:max` (when suffix is empty)
-  - Example: `10h|main|10h||30|10|1044:1000,1025:1000`
+  - `name|panel_name|prefix|suffix|gb|days|start|port:max,port:max`
+  - `name|panel_name|prefix|gb|days|start|port:max,port:max` (when suffix is empty)
+  - Example: `10h|main|10h||30|10|500|1044:1000,1025:1000`
+  - `start` sets the first config number (example: first config becomes `10h500`).
+  - Legacy formats without `start` are still accepted for backward compatibility.
   - Note: duplicate ports are rejected.
 
 - Add profile port:

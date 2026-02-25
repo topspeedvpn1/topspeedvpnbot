@@ -402,11 +402,12 @@ def build_admin_router(
         names = ", ".join(p.name for p in panels) if panels else "-"
         await message.answer(
             "فرمت:\n"
-            "`name|panel_name|prefix|suffix|gb|days|port:max,port:max`\n"
+            "`name|panel_name|prefix|suffix|gb|days|start|port:max,port:max`\n"
             "یا بدون suffix:\n"
-            "`name|panel_name|prefix|gb|days|port:max,port:max`\n"
+            "`name|panel_name|prefix|gb|days|start|port:max,port:max`\n"
             "مثال:\n"
-            "`10h|main|10h||30|10|1044:1000,1025:1000`\n"
+            "`10h|main|10h||30|10|500|1044:1000,1025:1000`\n"
+            "start یعنی شماره شروع نام‌گذاری (اولین کانفیگ می‌شود همان عدد start).\n"
             "اگر suffix نمی‌خوای خالی بگذار (دو || پشت هم).\n"
             f"پنل‌های ثبت‌شده: {names}\n"
             "برای انصراف دکمه `بازگشت` را بزن.",
@@ -423,13 +424,33 @@ def build_admin_router(
 
         raw = (message.text or "").strip()
         parts = raw.split("|")
-        if len(parts) not in {6, 7}:
-            await message.answer("فرمت اشتباه است. باید 6 یا 7 بخش باشد.")
+        if len(parts) not in {6, 7, 8}:
+            await message.answer("فرمت اشتباه است. باید 6، 7 یا 8 بخش باشد.")
             return
 
-        if len(parts) == 7:
-            name, panel_name, prefix, suffix, gb_raw, days_raw, ports_raw = [p.strip() for p in parts]
+        start_number = 1
+        if len(parts) == 8:
+            name, panel_name, prefix, suffix, gb_raw, days_raw, start_raw, ports_raw = [p.strip() for p in parts]
+            try:
+                start_number = int(start_raw)
+            except ValueError:
+                await message.answer("start باید عدد باشد.")
+                return
+        elif len(parts) == 7:
+            # New format without suffix: name|panel|prefix|gb|days|start|ports
+            # Legacy format with suffix: name|panel|prefix|suffix|gb|days|ports
+            if parts[3].strip().isdigit():
+                name, panel_name, prefix, gb_raw, days_raw, start_raw, ports_raw = [p.strip() for p in parts]
+                suffix = ""
+                try:
+                    start_number = int(start_raw)
+                except ValueError:
+                    await message.answer("start باید عدد باشد.")
+                    return
+            else:
+                name, panel_name, prefix, suffix, gb_raw, days_raw, ports_raw = [p.strip() for p in parts]
         else:
+            # Legacy format without suffix and without start.
             name, panel_name, prefix, gb_raw, days_raw, ports_raw = [p.strip() for p in parts]
             suffix = ""
 
@@ -449,6 +470,9 @@ def build_admin_router(
 
         if gb < 0 or days < 0:
             await message.answer("gb و days نباید منفی باشند.")
+            return
+        if start_number < 1:
+            await message.answer("start باید 1 یا بیشتر باشد.")
             return
 
         panel = await panel_repo.get_by_name(panel_name)
@@ -525,6 +549,7 @@ def build_admin_router(
                 suffix=suffix,
                 traffic_gb=gb,
                 expiry_days=days,
+                start_number=start_number,
                 ports=db_ports,
             )
         except Exception as exc:

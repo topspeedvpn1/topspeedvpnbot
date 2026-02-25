@@ -19,8 +19,10 @@ class ProfileRepository:
         suffix: str,
         traffic_gb: int,
         expiry_days: int,
+        start_number: int = 1,
         ports: list[tuple[int, int, int]],
     ) -> int:
+        counter_seed = max(0, int(start_number) - 1)
         now = int(time.time())
         async with self.db.transaction() as conn:
             cur = await conn.execute(
@@ -44,8 +46,8 @@ class ProfileRepository:
                 sort_order += 1
 
             await conn.execute(
-                "INSERT OR IGNORE INTO profile_counters(profile_id, last_number) VALUES(?, 0)",
-                (profile_id,),
+                "INSERT OR IGNORE INTO profile_counters(profile_id, last_number) VALUES(?, ?)",
+                (profile_id, counter_seed),
             )
 
         return profile_id

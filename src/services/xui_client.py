@@ -88,14 +88,51 @@ class XUIClient:
 
     async def fetch_subscription(self, sub_id: str) -> str:
         settings = await self.get_settings()
-        url = self._build_subscription_url(settings, sub_id)
-        response = await self._client.get(url)
-        if response.status_code != 200:
-            raise XUIError(f"Subscription endpoint failed with status {response.status_code}")
-        text = response.text.strip()
-        if not text or text == "Error!":
-            raise XUIError("Subscription endpoint returned empty/error body")
-        return text
+        urls = self._subscription_candidate_urls(settings, sub_id)
+        errors: list[str] = []
+
+        for url in urls:
+            try:
+                response = await self._client.get(url)
+            except httpx.HTTPError as exc:
+                errors.append(f"{url} -> connect error: {exc}")
+                continue
+
+            if response.status_code != 200:
+                errors.append(f"{url} -> status {response.status_code}")
+                continue
+
+            text = response.text.strip()
+            if not text or text == "Error!":
+                errors.append(f"{url} -> empty/error body")
+                continue
+
+            return text
+
+        details = " | ".join(errors) if errors else "unknown subscription error"
+        raise XUIError(f"Subscription fetch failed: {details}")
+
+    def _subscription_candidate_urls(self, settings: XUISettings, sub_id: str) -> list[str]:
+        primary = self._build_subscription_url(settings, sub_id)
+        urls = [primary]
+
+        # Fallback for installations where subscription is served on panel port.
+        if not settings.sub_uri and settings.sub_port > 0:
+            parsed = urlparse(self.base_url)
+            scheme = parsed.scheme or "https"
+            host = parsed.hostname
+            base_port = parsed.port
+            if host and base_port and base_port != settings.sub_port:
+                sub_path = settings.sub_path or "/sub/"
+                if not sub_path.startswith("/"):
+                    sub_path = "/" + sub_path
+                if not sub_path.endswith("/"):
+                    sub_path += "/"
+                fallback = f"{scheme}://{host}:{base_port}{sub_path}{sub_id}"
+                if fallback not in urls:
+                    urls.append(fallback)
+
+        return urls
 
     def _build_subscription_url(self, settings: XUISettings, sub_id: str) -> str:
         if settings.sub_uri:
